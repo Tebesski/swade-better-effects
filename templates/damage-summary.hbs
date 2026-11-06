@@ -1,0 +1,7 @@
+<section class="sbe-damage-summary standard-form">
+  <h4>Conditional effects</h4>
+  <p>Damage <strong>{{sbe.damage}}</strong> · AP <strong>{{sbe.ap}}</strong> · Toughness <strong>{{sbe.toughness}}</strong> ({{sbe.armor}} armor)</p>
+  {{#if sbe.immune}}<p>Heavy Armor: this attack is not a Heavy Weapon.</p>{{/if}}
+  <div class="sbe-roll-flags">{{#each sbe.flags}}<span class="sbe-flag">{{this}}</span>{{else}}<span class="hint">No roll flags</span>{{/each}}</div>
+  {{#each sbe.applied}}<p class="hint">{{label}} — {{selector}}: {{before}} → {{after}}</p>{{else}}<p class="hint">No conditional modifiers matched.</p>{{/each}}
+</section>

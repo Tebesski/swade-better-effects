@@ -1,0 +1,7 @@
+<section class="standard-form"><h3>{{name}}</h3>
+  <div class="form-group stacked sbe-tags-field"><label for="{{listId}}-input">Flags</label><div class="form-fields"><input id="{{listId}}-input" type="text" name="tags" value="{{tags}}" list="{{listId}}" {{#unless editable}}disabled{{/unless}}>
+    {{#if isGear}}<select name="flagActivation" aria-label="Flag activation" {{#unless editable}}disabled{{/unless}}><option value="equipped" {{#if (eq activation "equipped")}}selected{{/if}}>When equipped</option><option value="carried" {{#if (eq activation "carried")}}selected{{/if}}>When carried</option></select>{{/if}}</div>
+    <datalist id="{{listId}}">{{#each flags}}<option value="{{this}}"></option>{{/each}}</datalist>
+    </div>
+  {{#if editable}}<footer class="form-footer"><button type="submit">Save flags</button></footer>{{/if}}
+</section>

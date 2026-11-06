@@ -1,0 +1,10 @@
+<section class="standard-form">
+  <p>Flags identify damage types, materials, creatures, and anything else used by your effect conditions.</p>
+  <input type="search" value="{{query}}" placeholder="Search flags" aria-label="Search flags" autocomplete="off">
+  {{#if editable}}<div class="sbe-library-add"><input type="text" name="newFlags" value="{{newFlags}}" placeholder="Add flags, separated by commas" aria-label="New flags"><button type="button" data-action="add"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add</button></div>{{/if}}
+  <ol class="sbe-library-list plain" aria-label="Flag library">
+    {{#each flags}}<li data-library-flag="{{name}}"><span>{{name}}</span>{{#if builtIn}}<i class="fa-solid fa-lock" title="Built-in flag" aria-label="Built-in flag"></i>{{else}}{{#if ../editable}}<a role="button" tabindex="0" data-action="remove" data-flag="{{name}}" aria-label="Remove {{name}}" title="Remove flag"><i class="fa-solid fa-trash" aria-hidden="true"></i></a>{{/if}}{{/if}}</li>{{/each}}
+  </ol>
+  <p class="sbe-library-empty hint" hidden>No matching flags.</p>
+  {{#if editable}}<footer class="form-footer"><button type="button" data-action="scan">Scan world flags</button><button type="submit"><i class="fa-solid fa-save"></i> Save library</button></footer>{{/if}}
+</section>

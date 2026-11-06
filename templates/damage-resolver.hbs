@@ -1,0 +1,10 @@
+<section class="standard-form"><h3>{{actor.name}}</h3>
+  <div class="form-group"><label>Rolled damage</label><input type="number" name="damage" value="{{damage}}" min="0" required></div>
+  <div class="form-group"><label>Armor piercing</label><input type="number" name="ap" value="{{ap}}" min="0" required></div>
+  <button type="submit">Recalculate</button>
+  {{> "modules/swade-better-effects/templates/damage-summary.hbs"}}
+  <h3>{{#if remaining}}{{remaining}} wound(s){{else}}{{#if attemptedSoak}}All wounds soaked{{else}}{{result.status}}{{/if}}{{/if}}</h3>
+  {{#if attemptedSoak}}<p>Best soak: {{bestSoak}} wound(s).</p>{{/if}}
+  {{#if canSoak}}<div class="sbe-presets"><button type="button" data-action="bennySoak" {{#unless canSpendBenny}}disabled{{/unless}}>Spend Benny to Soak</button><button type="button" data-action="freeSoak">Free Soak</button></div>{{/if}}
+  <footer class="form-footer"><button type="button" data-action="dismiss">Cancel</button><button type="button" data-action="take">Apply result</button></footer>
+</section>

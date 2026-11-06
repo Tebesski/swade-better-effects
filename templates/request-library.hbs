@@ -1,0 +1,15 @@
+<section class="standard-form">
+  <input type="search" aria-label="Search roll requests" placeholder="Search roll requests" value="{{query}}" autocomplete="off">
+  <ol class="plain sbe-request-library-list">
+    {{#each entries}}<li data-request-search="{{name}} {{request.name}} {{flags}}">
+      <div class="sbe-request-library-info"><strong>{{name}}</strong><span>{{request.name}} · TN {{request.targetNumber}}</span><small>{{visibility}}{{#if flags}} · {{flags}}{{/if}}</small></div>
+      <div class="sbe-request-library-actions">
+        <button type="button" data-action="generateRequest" data-id="{{id}}" class="icon fa-solid fa-dice" aria-label="Generate {{name}}" title="Generate request"></button>
+        <a role="button" tabindex="0" data-action="editRequest" data-id="{{id}}" aria-label="Edit {{name}}" title="Edit request"><i class="fa-solid fa-pen-to-square" inert></i></a>
+        <a role="button" tabindex="0" data-action="deleteRequest" data-id="{{id}}" aria-label="Delete {{name}}" title="Delete request"><i class="fa-solid fa-trash" inert></i></a>
+      </div>
+    </li>{{/each}}
+  </ol>
+  <p class="hint sbe-request-library-empty" hidden>No matching requests.</p>
+  <button type="button" data-action="createRequest"><i class="fa-solid fa-plus" inert></i> Create Roll Request</button>
+</section>

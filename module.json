@@ -1,0 +1,20 @@
+{
+   "id": "swade-better-effects",
+   "title": "SWADE Better Effects",
+   "description": "Better SWADE effects management.",
+   "version": "1.0.0",
+   "compatibility": { "minimum": "14", "verified": "14", "maximum": "14" },
+   "relationships": {
+      "systems": [
+         {
+            "id": "swade",
+            "type": "system",
+            "compatibility": { "minimum": "6.0.0" }
+         }
+      ]
+   },
+   "documentTypes": { "Item": { "effect": { "htmlFields": ["description"] } } },
+   "esmodules": ["scripts/main.mjs"],
+   "styles": ["styles/better-effects.css"],
+   "languages": [{ "lang": "en", "name": "English", "path": "lang/en.json" }]
+}
