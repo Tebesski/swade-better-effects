@@ -48,7 +48,7 @@ try {
   await app.locator('[data-category="derived"] > summary').click(); await app.locator('[data-key="system.stats.toughness.value"]').click();
   await app.locator("input.value").fill("-2"); await save(app);
   await page.evaluate(async () => { ef.fatigue = ef.actor.effects.getName("Fatigue"); await ef.fatigue.update({statuses: ["distracted"]}); });
-  assert.deepEqual(await state(), {toughness: 4, distracted: true, fatigueActive: true, suppressed: false, disabled: false, sourceDisabled: false, flags: ["elf", "fatigue", "tired"]});
+  assert.deepEqual(await state(), {toughness: 4, distracted: true, fatigueActive: true, suppressed: false, disabled: false, sourceDisabled: false, flags: ["elf", "fatigue", "size0", "tired"]});
   assert.equal(await page.evaluate(id => ef.fatigue.getFlag(id, "nameFlag"), id), "fatigue");
   pass("effect Flags sits below Name, normalizes custom flags, and automatically supplies its active flags to the actor");
   app = await wizard(); await app.locator('[name="name"]').fill("Energy Drink");
@@ -69,7 +69,7 @@ try {
   assert.deepEqual(controlFit, [true, true]);
   if (shots) await app.screenshot({path: `${shots}/effect-flags-duration-suppress.png`, animations: "disabled"});
   await save(app); await page.evaluate(() => { ef.drink = ef.actor.effects.getName("Energy Drink"); });
-  assert.deepEqual(await state(), {toughness: 6, distracted: false, fatigueActive: false, suppressed: true, disabled: false, sourceDisabled: false, flags: ["elf", "energised", "energy-drink"]});
+  assert.deepEqual(await state(), {toughness: 6, distracted: false, fatigueActive: false, suppressed: true, disabled: false, sourceDisabled: false, flags: ["elf", "energised", "energy-drink", "size0"]});
   pass("Suppress fatigue suspends native modifiers and statuses as well as inherited/custom flags, preserving the source effect's disabled state");
   app = await wizard("Energy Drink");
   assert.equal(await app.locator('[name="duration.value"]').inputValue(), "1"); assert.equal(await app.getByLabel("Duration unit", {exact: true}).inputValue(), "minutes");
@@ -124,7 +124,7 @@ try {
     await other.delete(); await template.delete();
     return {active, own, persisted, inactive};
   }, id);
-  assert.deepEqual(libraryFlags, {active: ["fire-ward", "resistant"], own: ["fire-ward", "resistant"], persisted: "fire-ward", inactive: []});
+  assert.deepEqual(libraryFlags, {active: ["fire-ward", "resistant", "size0"], own: ["fire-ward", "resistant"], persisted: "fire-ward", inactive: ["size0"]});
   pass("library templates retain own flags when applied and inheritance ends when the actor copy is disabled");
   await page.reload(); await ready();
   await page.evaluate(({id, prefix}) => { globalThis.ef = {api: game.modules.get(id).api, actor: game.actors.getName(prefix)}; ef.fatigue = ef.actor.effects.getName("Heavy Fatigue"); }, {id, prefix});

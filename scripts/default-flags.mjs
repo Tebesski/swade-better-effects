@@ -27,7 +27,8 @@ export function automaticFlags(doc) {
   if (doc?.documentName === "ActiveEffect") return normalizeFlags([normalizeFlag(doc.name)]);
   if (doc?.documentName === "Item") return normalizeFlags([normalizeFlag(doc.name), doc.type === "power" ? normalizeFlag(doc.system?.arcane) : "", ...equipmentFlags(doc)]);
   if (doc?.documentName !== "Actor") return [];
-  return normalizeFlags([ancestryFlag(doc)]);
+  const size = doc.type === "vehicle" ? doc.system?.size : doc.system?.stats?.size;
+  return normalizeFlags([ancestryFlag(doc), Number.isInteger(size) ? `size${size}` : ""]);
 }
 
 export function ancestryFlag(doc) {

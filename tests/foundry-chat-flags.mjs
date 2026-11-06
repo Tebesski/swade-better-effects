@@ -42,7 +42,7 @@ async function check(page, messageId, gm) {
     assert.equal(await target.locator(".sbe-flag").first().isVisible(), false);
     await target.locator("summary").click();
     assert.deepEqual(await target.locator("strong").allTextContents(), ["Elf target", "Insect target"]);
-    assert.deepEqual(await target.locator(".sbe-flag").allTextContents(), ["elf", "secret-ward", "token-ward", "insect"]);
+    assert.deepEqual(await target.locator(".sbe-flag").allTextContents(), ["elf", "secret-ward", "size1", "token-ward", "insect", "size-1"]);
     assert.equal(await target.evaluate(el => el.parentElement.matches(".chat-message")), true);
     assert.equal(await target.evaluate(el => [...el.parentElement.children].every(child => child === el || child.getBoundingClientRect().bottom <= el.getBoundingClientRect().top + 1)), true);
     await target.locator("summary").click();
@@ -62,8 +62,8 @@ try {
       {name: "Fire Sword", type: "weapon", system: {damage: "6+5", equipStatus: 4}, flags: {[id]: {tags: ["fire"]}}}
     ]});
     cf.weapon = cf.actor.items.getName("Fire Sword");
-    const elf = await Actor.create({name: `${prefix} elf`, type: "npc", flags: {[id]: {tags: ["elf", "secret-ward"]}}});
-    const insect = await Actor.create({name: `${prefix} insect`, type: "npc", flags: {[id]: {tags: ["insect"]}}});
+    const elf = await Actor.create({name: `${prefix} elf`, type: "npc", system: {stats: {size: 1}}, flags: {[id]: {tags: ["elf", "secret-ward"]}}});
+    const insect = await Actor.create({name: `${prefix} insect`, type: "npc", system: {stats: {size: -1}}, flags: {[id]: {tags: ["insect"]}}});
     cf.scene = await Scene.create({name: prefix, active: true, width: 1200, height: 900, padding: 0,
       tokens: [{name: "Elf target", actorId: elf.id, actorLink: true, x: 200, y: 200, flags: {[id]: {tags: ["token-ward"]}}},
         {name: "Insect target", actorId: insect.id, actorLink: true, x: 400, y: 200}]});

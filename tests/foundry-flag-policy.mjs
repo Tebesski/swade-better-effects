@@ -18,14 +18,14 @@ try{
       {name:"Sword, Long",type:"weapon",system:{equipStatus:4,damage:"11",rangeType:0},flags:{[id]:{tags:["fire"]}}},{name:"Mail",type:"armor",system:{equipStatus:1,armor:2}}]});
     policy.sword=policy.actor.items.getName("Sword, Long");policy.uuid=policy.actor.uuid;
   },{id,prefix});
-  assert.deepEqual(await page.evaluate(()=>policy.api.getFlags(policy.actor)),["elf"]);
+  assert.deepEqual(await page.evaluate(()=>policy.api.getFlags(policy.actor)),["elf","size0"]);
   assert.deepEqual(await page.evaluate(()=>policy.api.getFlags(policy.sword)),["fire","main-hand","sword-long"]);
   assert.deepEqual(await page.evaluate(()=>policy.api.getFlags(policy.actor.items.getName("Dodge"))),["dodge"]);
   assert.deepEqual(await page.evaluate(()=>policy.api.getFlags(policy.actor.items.getName("Blast"))),["blast"]);
-  let input=await actorField();assert.equal(await input.inputValue(),"elf");
+  let input=await actorField();assert.equal(await input.inputValue(),"elf, size0");
   await input.fill("heroic");await input.press("Tab");await page.waitForFunction(()=>policy.actor.getFlag("swade-better-effects","excludedTags")?.includes("elf"));
   assert.deepEqual(await page.evaluate(()=>policy.api.getFlags(policy.actor)),["heroic"]);await page.evaluate(()=>policy.actor.sheet.close());
-  pass("actors receive ancestry only; item names, types, inventory and hand flags do not leak onto actors");
+  pass("actors receive ancestry and Size without inheriting item flags");
   await page.evaluate(()=>policy.sword.sheet.render({force:true}));const sheet=page.locator(`#${await page.evaluate(()=>policy.sword.sheet.id)}`);
   await sheet.locator('[data-action="tab"][data-tab="properties"]').click();input=sheet.locator(".sbe-tags-field input");
   await input.fill("fire, main-hand");await input.press("Tab");await page.waitForFunction(()=>policy.sword.getFlag("swade-better-effects","excludedTags")?.includes("sword-long"));

@@ -38,16 +38,20 @@ test("each equipment state supplies exactly one flag to its item and none to its
     assert.deepEqual(effectiveFlags(hero), ["elf"]);
   }
 });
-test("actors automatically receive ancestry only, without Edge, item, name or type flags", () => {
+test("actors automatically receive ancestry and current Size without inheriting item flags", () => {
   const hero = actor([item("Dodge", "edge"), item("High Elf", "ancestry")]);
-  assert.deepEqual(effectiveFlags(hero),["high-elf"]);
+  hero.system.stats = {size: 0};
+  assert.deepEqual(effectiveFlags(hero),["high-elf", "size0"]);
   assert.deepEqual(effectiveFlags(hero.items[0]),["dodge"]);
   hero.items.shift();
   assert.ok(!effectiveFlags(hero).includes("dodge"));
   hero.items = [];
-  assert.deepEqual(effectiveFlags(hero),["elf"]);
+  hero.system.stats.size = -1;
+  assert.deepEqual(effectiveFlags(hero),["elf", "size-1"]);
   hero.system.details.species.name="";
-  assert.deepEqual(effectiveFlags(hero),[]);
+  hero.system.stats.size = 1;
+  assert.deepEqual(effectiveFlags(hero),["size1"]);
+  assert.deepEqual(effectiveFlags({...hero, type: "vehicle", system: {size: 4}}), ["size4"]);
 });
 test("gear's own flags never transfer to its actor; explicit flag-granting effects respect equipped/carried", () => {
   const gear = item("Fire charm", "gear", {system: {equipStatus: 1, quantity: 1}, flags: {"swade-better-effects": {tags: ["fire"]}}});
