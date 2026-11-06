@@ -6,6 +6,7 @@ import {calculateWounds, normalizeFlags, resolveDamage} from "./rules.mjs";
 import {damageAP, damageIsHeavyWeapon, damageRoll, isDamageMessage, isTraitMessage, messageContext} from "./roll-context.mjs";
 import {renderChatFlags} from "./chat-flags.mjs";
 import {renderOpposedRoll} from "./opposed.mjs";
+import {moduleScriptBase} from "./module-imports.mjs";
 
 let TargetedAdapter;
 let targetedInitialization;
@@ -53,7 +54,8 @@ export function initializeTargetedDamage() {
 
 async function loadTargetedDamage() {
   try {
-    const {TargetedDamageApplicator: Base} = await import(foundry.utils.getRoute("modules/swade-targeted-damage/modules/TargetedDamageApplicator.mjs"));
+    const base = await moduleScriptBase("swade-targeted-damage");
+    const {TargetedDamageApplicator: Base} = await import(new URL("modules/TargetedDamageApplicator.mjs", base).href);
     TargetedAdapter = class ConditionalTargetedDamageApplicator extends Base {
       static DEFAULT_OPTIONS = {classes: ["sbe-targeted-adapter"]};
       static PARTS = {summary: {template: `${TEMPLATE}/damage-summary.hbs`}, ...Base.PARTS};

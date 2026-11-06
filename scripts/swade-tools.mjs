@@ -3,17 +3,19 @@ import {actorWithDefense, prepareDamage} from "./damage.mjs";
 import {wrapMethod} from "./effects.mjs";
 import {damageAP, isDamageMessage, isTraitMessage, makeContext, messageContext, setRollContext, traitAdjustment} from "./roll-context.mjs";
 import {isFlagSuppressed} from "./default-flags.mjs";
+import {moduleScriptBase} from "./module-imports.mjs";
 
 // Keep SWADE Tools' target labels, application handlers, and soak workflow. Supply an
 // equivalent defense only while its synchronous target calculation is running.
 export async function initializeSwadeTools() {
   if (!game.modules.get("swade-tools")?.active) return;
   try {
+    const base = await moduleScriptBase("swade-tools");
     const [{default: RollControl}, gb, {default: BasicRoll}, {default: CharRoll}] = await Promise.all([
-      import(foundry.utils.getRoute("modules/swade-tools/scripts/class/RollControl.js")),
-      import(foundry.utils.getRoute("modules/swade-tools/scripts/gb.js")),
-      import(foundry.utils.getRoute("modules/swade-tools/scripts/class/BasicRoll.js")),
-      import(foundry.utils.getRoute("modules/swade-tools/scripts/class/CharRoll.js"))
+      import(new URL("scripts/class/RollControl.js", base).href),
+      import(new URL("scripts/gb.js", base).href),
+      import(new URL("scripts/class/BasicRoll.js", base).href),
+      import(new URL("scripts/class/CharRoll.js", base).href)
     ]);
     wrapMethod(CharRoll.prototype, "baseModifiers", function (original, damage = false) {
       if (damage || !isFlagSuppressed(this.actor, "fatigue")) return original(damage);
