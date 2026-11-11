@@ -11,7 +11,8 @@
             "type": "system",
             "compatibility": { "minimum": "6.0.0" }
          }
-      ]
+      ],
+      "requires": [{ "id": "swade-better-setting", "type": "module" }]
    },
    "documentTypes": { "Item": { "effect": { "htmlFields": ["description"] } } },
    "esmodules": ["scripts/main.mjs"],

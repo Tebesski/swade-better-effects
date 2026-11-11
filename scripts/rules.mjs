@@ -118,10 +118,11 @@ export function resolveMapPenalty({penalty, context = {}, rules = []}) {
   return {penalty: value > 0 ? -value : 0, applied};
 }
 
-export function resolveDamage({damage, ap = 0, toughness, armor = 0, context = {}, attackerRules = [], defenderRules = []}) {
-  const values = {damage: Number(damage), ap: Number(ap), toughness: Number(toughness), armor: Number(armor)};
-  if (!Object.values(values).every(Number.isFinite)) throw new Error("Damage and defenses must be finite numbers.");
-  const applied = [];
+export const damageRuleKey = (rule, side = rule.side) =>
+  JSON.stringify([side, rule.selector, rule.type ?? "add", String(rule.formula ?? rule.value), rule.label ?? ""]);
+
+export function* matchingDamageRules({context = {}, attackerRules = [], defenderRules = [], skipRolled = true}) {
+  const rolled = [...(skipRolled ? context.damageRulesInRoll ?? [] : [])];
   const defaults = {multiply: 10, add: 20, subtract: 20, downgrade: 30, upgrade: 40, override: 50};
   const rules = [...attackerRules.map(r => ({...r, side: "attacker"})), ...defenderRules.map(r => ({...r, side: "defender"}))]
     .sort((a, b) => (a.side === b.side ? 0 : a.side === "attacker" ? -1 : 1)
@@ -133,17 +134,31 @@ export function resolveDamage({damage, ap = 0, toughness, armor = 0, context = {
     if (rule.side === "defender" && rule.selector === "ap" && !incomingAP) continue;
     if (rule.side === "attacker" && !["outgoing-damage", "ap"].includes(rule.selector)) continue;
     if (rule.side === "defender" && !["incoming-damage", "toughness", "armor", "ap"].includes(rule.selector)) continue;
-    const predicateContext = {...context, actor: rule.ownerFlags ?? []};
-    if (!testPredicate(rule.predicate ?? emptyPredicate(), predicateContext)) continue;
+    if (!testPredicate(rule.predicate ?? emptyPredicate(), {...context, actor: rule.ownerFlags ?? []})) continue;
+    const applied = rolled.indexOf(damageRuleKey(rule));
+    if (applied < 0) yield rule;
+    else rolled.splice(applied, 1);
+  }
+}
+
+export function resolveDamage({damage, ap = 0, toughness, armor = 0, skipUnrolled = false, ...rules}) {
+  const values = {damage: Number(damage), ap: Number(ap), toughness: Number(toughness), armor: Number(armor)};
+  if (!Object.values(values).every(Number.isFinite)) throw new Error("Damage and defenses must be finite numbers.");
+  const applied = [];
+  for (const rule of matchingDamageRules(rules)) {
     const key = rule.selector.endsWith("-damage") ? "damage" : rule.selector;
-    if (!(key in values)) continue;
+    if (!(key in values) || (skipUnrolled && key === "damage" && !Number.isFinite(Number(rule.value)))) continue;
     const before = values[key];
     values[key] = numericChange(before, rule.type ?? "add", rule.value);
     if (!Number.isFinite(values[key])) throw new Error("A conditional rule produced a non-finite result.");
     if (key === "armor") values.armor = Math.max(0, values.armor);
     // Armor is part of total Toughness, so conditional armor changes both values.
     if (key === "armor") values.toughness += values.armor - before;
-    applied.push({label: rule.label ?? "Conditional effect", selector: rule.selector, before, after: values[key]});
+    const change = {label: rule.label ?? "Conditional effect", selector: rule.selector, before, after: values[key]};
+    if (key === "damage") Object.assign(change, {type: rule.type ?? "add", rolledValue: Number(rule.value)});
+    if (rule.formula) change.formula = rule.formula;
+    if (rule.breakdown) change.breakdown = rule.breakdown;
+    applied.push(change);
   }
   values.damage = Math.max(0, Math.floor(values.damage));
   values.armor = Math.max(0, values.armor);

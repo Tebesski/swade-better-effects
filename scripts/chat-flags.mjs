@@ -1,4 +1,4 @@
-import {documentFlags} from "./flags.mjs";
+import {rollTarget} from "./flags.mjs";
 import {normalizeFlags} from "./rules.mjs";
 
 function flagList(flags) {
@@ -52,7 +52,7 @@ export function renderChatFlags(message, html, context) {
     const group = document.createElement("section");
     const name = document.createElement("strong");
     name.textContent = token.name;
-    group.append(name, flagList([...documentFlags(token.actor), ...documentFlags(token)]));
+    group.append(name, flagList(rollTarget(context, token).flags));
     targetFlags.append(group);
   }
   html.append(targetFlags);

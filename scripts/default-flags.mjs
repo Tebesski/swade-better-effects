@@ -25,7 +25,11 @@ export function itemGrantsFlags(item) {
 
 export function automaticFlags(doc) {
   if (doc?.documentName === "ActiveEffect") return normalizeFlags([normalizeFlag(doc.name)]);
-  if (doc?.documentName === "Item") return normalizeFlags([normalizeFlag(doc.name), doc.type === "power" ? normalizeFlag(doc.system?.arcane) : "", ...equipmentFlags(doc)]);
+  if (doc?.documentName === "Item") {
+    const flags = [normalizeFlag(doc.name), doc.type === "power" ? normalizeFlag(doc.system?.arcane) : "", ...equipmentFlags(doc)];
+    globalThis.Hooks?.callAll("swadeBetterEffectsAutomaticFlags", doc, flags);
+    return normalizeFlags(flags);
+  }
   if (doc?.documentName !== "Actor") return [];
   const size = doc.type === "vehicle" ? doc.system?.size : doc.system?.stats?.size;
   return normalizeFlags([ancestryFlag(doc), Number.isInteger(size) ? `size${size}` : ""]);

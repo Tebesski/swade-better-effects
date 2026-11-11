@@ -111,6 +111,18 @@ try {
   }, id);
   assert.equal(await page.evaluate(() => ef.gearEffect.active), false); assert.equal(await page.evaluate(() => ef.gearEffect.disabled), false);
   await page.evaluate(() => ef.suppressor.delete()); assert.equal(await page.evaluate(() => ef.gearEffect.active), true);
+  const sheetId = await page.evaluate(async () => {
+    await ef.actor.sheet.render({force: true});
+    return ef.actor.sheet.id;
+  });
+  const actorSheet = page.locator(`#${sheetId}`);
+  await actorSheet.locator('[data-action="tab"][data-tab="effects"]').click();
+  const gearEffectId = await page.evaluate(() => ef.gearEffect.id);
+  await actorSheet.locator(`[data-effect-id="${gearEffectId}"] [data-action="openEffect"]`).click();
+  await page.getByRole("dialog").filter({hasText: "Edit Effect: Pack Burden"}).getByRole("button", {name: "Effect builder"}).click();
+  assert.equal(await page.locator('.sbe-aegis [name="name"]').inputValue(), "Pack Burden");
+  await page.locator('.sbe-aegis [data-action="close"]').first().click();
+  await page.evaluate(() => ef.actor.sheet.close());
   await page.evaluate(async () => { await ef.actor.toggleActiveEffect("shaken", {active: false}); await ef.actor.toggleActiveEffect("vulnerable", {active: false}); await ef.gear.delete(); });
   pass("actor-local suppression also suspends and restores transferring item effects");
   const libraryFlags = await page.evaluate(async id => {

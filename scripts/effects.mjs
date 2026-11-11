@@ -15,11 +15,14 @@ export function collectRules(actor, item) {
   if (!actor) return [];
   const effects = [...actor.allApplicableEffects()];
   if (item) effects.push(...item.effects.filter(e => !e.transfer));
+  return collectEffectRules(effects, documentFlags(actor));
+}
+
+export function collectEffectRules(effects, ownerFlags) {
   const result = [];
   for (const effect of effects) {
     if (!effect.active) continue;
     const flags = effect.flags[MODULE_ID] ?? {};
-    const ownerFlags = documentFlags(actor);
     for (const rule of flags.rules ?? []) result.push({...structuredClone(rule), ownerFlags, label: rule.label || effect.name});
     if (!conditionsValid(effect)) continue;
     const changes = effect._source.system.changes;

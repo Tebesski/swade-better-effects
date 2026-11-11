@@ -81,6 +81,17 @@ test("multiple defenses do not mutate shared roll input or leak to another targe
   assert.deepEqual(input, before);
   assert.equal(resolve({}).toughness, 6);
 });
+test("a recorded damage formula applies once to each matching target", () => {
+  const predicate = {op: "any", children: [flag("the-drop", "target"), flag("vulnerable", "target")]};
+  const bonus = rule("outgoing-damage", 9, predicate, "add", {label: "Exploit opening", formula: "1d6x+2"});
+  const against = target => resolve({context: {hasRoll: true, target}, attackerRules: [bonus]});
+  for (const flags of [["the-drop"], ["vulnerable"], ["the-drop", "vulnerable"]]) {
+    const result = against(flags);
+    assert.equal(result.damage, 21);
+    assert.deepEqual(result.applied, [{label: "Exploit opening", selector: "outgoing-damage", before: 12, after: 21, type: "add", formula: "1d6x+2", rolledValue: 9}]);
+  }
+  assert.equal(against([]).damage, 12);
+});
 test("priority, multiplication, addition, override, upgrade, and downgrade", () => {
   assert.equal(resolve({defenderRules: [rule("incoming-damage", 2), rule("incoming-damage", .5, emptyPredicate(), "multiply")]}).damage, 8);
   assert.equal(resolve({defenderRules: [rule("toughness", 10, emptyPredicate(), "upgrade"), rule("toughness", 7, emptyPredicate(), "override")]}).toughness, 7);

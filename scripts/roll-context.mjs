@@ -1,6 +1,6 @@
 import {MODULE_ID} from "./constants.mjs";
-import {collectRollNotes, collectRules} from "./effects.mjs";
-import {documentFlags, rememberFlags} from "./flags.mjs";
+import {collectRollNotes, collectRules, wrapMethod} from "./effects.mjs";
+import {documentFlags, rememberFlags, rollTarget} from "./flags.mjs";
 import {normalizeFlags, resolveTrait} from "./rules.mjs";
 import {rollCategoryFlags} from "./default-flags.mjs";
 import {withOpposition} from "./opposed-context.mjs";
@@ -8,6 +8,7 @@ import {messageTargets} from "./chat-flags.mjs";
 import {resolveRollNotes} from "./note-rules.mjs";
 import {cleanRollNote} from "./roll-notes.mjs";
 import {criticalFailure, withRollOutcome} from "./roll-outcomes.mjs";
+import {applyDamageFormula, sharedDamageRules, snapshotDamageFormulas} from "./damage-formulas.mjs";
 
 function actorToken(actor) {
   return actor?.token ?? actor?.getActiveTokens?.(false, true)?.find(t => t.object?.controlled) ?? actor?.getActiveTokens?.(false, true)?.[0];
@@ -32,18 +33,22 @@ export function snapshotRollNotes(context, message) {
   const tokens = context.opposition ? (context.opposition.tokenUuid ? [foundry.utils.fromUuidSync(context.opposition.tokenUuid)].filter(Boolean) : [])
     : messageTargets(message, context);
   const targets = tokens.map(token => ({uuid: token.uuid, name: token.name,
-    flags: normalizeFlags([...documentFlags(token.actor), ...documentFlags(token)]), notes: collectRollNotes(token.actor)}));
+    flags: rollTarget(context, token).flags, notes: collectRollNotes(token.actor)}));
   context.notes = resolveRollNotes({context, attackerNotes: context.attackerNotes, targets})
     .map(note => ({...note, html: cleanRollNote(note.html, {publicContent: true})}));
   delete context.attackerNotes;
   return context;
 }
 
-export function tagRoll(roll, flags, {actor, item, token, targetUuids} = {}) {
+const nativeDamage = new WeakMap();
+
+export function tagRoll(roll, flags, {actor, item, token, targetUuids, deferDamage = false} = {}) {
   const context = makeContext(actor, item, flags, {token});
   context.rollType = "damage";
   if (targetUuids) context.targetUuids = targetUuids;
-  return setRollContext(roll, context);
+  if (deferDamage && roll.terms[0]) nativeDamage.set(roll.terms[0], context);
+  const applied = !deferDamage && !roll._evaluated ? applyDamageFormula(roll, context, sharedDamageRules(context), roll.acing) : context;
+  return setRollContext(roll, applied);
 }
 
 export function setRollContext(roll, context) {
@@ -72,7 +77,7 @@ export function isTraitMessage(message) {
 
 export function traitAdjustment(context, token, {includeDefender = true} = {}) {
   const actor = token?.actor;
-  const target = normalizeFlags([...documentFlags(actor), ...documentFlags(token?.document ?? token)]);
+  const {flags: target} = rollTarget(context, token);
   return resolveTrait({context: {...context, target}, attackerRules: context.attackerRules ?? [],
     defenderRules: includeDefender ? collectRules(actor).map(rule => ({...rule, ownerFlags: target})) : []});
 }
@@ -129,8 +134,24 @@ function outcomeContext(message, context) {
 }
 
 export function registerRollHooks() {
+  // Document creation awaits this workflow after preCreateChatMessage snapshots
+  // the rules. Every client and target then uses the same rolled values.
+  wrapMethod(CONFIG.ChatMessage.documentClass, "_preCreateOperation", async function (original, messages, ...args) {
+    const allowed = await original(messages, ...args);
+    if (allowed !== false) await Promise.all(messages.map(snapshotDamageFormulas));
+    return allowed;
+  });
   Hooks.on("updateChatMessage", message => { if (isTraitMessage(message)) rememberFlags(messageContext(message).roll); });
-  Hooks.on("swadeRollDamage", (actor, item, roll, _modifiers, options) => tagRoll(roll, options?.effectFlags ?? [], {actor, item}));
+  wrapMethod(CONFIG.Dice.DamageRoll, "fromTerms", function (original, terms, ...args) {
+    const context = nativeDamage.get(terms[0]);
+    const roll = original(terms, ...args);
+    if (!context) return roll;
+    const updated = {...context, targetUuids: [...game.user.targets].map(target => target.document.uuid)};
+    const rules = sharedDamageRules(updated);
+    return rules.length ? setRollContext(roll, applyDamageFormula(roll, updated, rules)) : roll;
+  });
+  Hooks.on("swadeRollDamage", (actor, item, roll, _modifiers, options) =>
+    tagRoll(roll, options?.effectFlags ?? [], {actor, item, deferDamage: true}));
   const trait = (actor, skillOrAttribute, roll, modifiers, options, isAttribute) => {
     const flags = [...(options.effectFlags ?? [])];
     if (modifiers.some(mod => mod.label === "SWADE.GangUp" || mod.label === game.i18n.localize("SWADE.GangUp"))) flags.push("gang-up");

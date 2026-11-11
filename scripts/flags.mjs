@@ -4,6 +4,15 @@ import {ancestryFlag, effectiveFlags, excludedFlags, flagActivation, flagInputDa
 import {MODIFY_FLAG_KEY} from "./flag-changes.mjs";
 
 export const documentFlags = effectiveFlags;
+
+export function rollTarget(context, token, actor = token?.actor) {
+  const document = token?.document ?? token;
+  const item = context.targetItemId && context.targetUuids?.includes(document?.uuid)
+    ? actor?.items?.get(context.targetItemId) : undefined;
+  const flags = item ? documentFlags(item) : [...documentFlags(actor), ...documentFlags(document)];
+  globalThis.Hooks?.callAll("swadeBetterEffectsTargetFlags", context, document, actor, item, flags);
+  return {item, flags: normalizeFlags(flags)};
+}
 export function catalogFlags() { return normalizeFlags([...STANDARD_FLAGS, ...game.settings.get(MODULE_ID, "flagLibrary")]); }
 let pendingCatalog = Promise.resolve();
 

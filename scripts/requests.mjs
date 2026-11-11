@@ -48,7 +48,7 @@ class RollRequestComposer extends foundry.applications.api.HandlebarsApplication
           const skill = await game.packs.get("world.better-setting-skills")?.getDocument(entry.key);
           this.selected.attribute = skill?.system.attribute;
         }
-      });
+      }, {classes: ["sbe-app"]});
     }}};
   static PARTS = {form: {template: `${TEMPLATE}/roll-request.hbs`}};
   async _prepareContext() {
@@ -163,7 +163,7 @@ export async function rollRequestedTrait(message, actorUuid) {
   if (!actorUuid && actors.length > 1) {
     const content = document.createElement("div"), select = document.createElement("select"); select.name = "actor"; select.setAttribute("aria-label", "Actor");
     for (const entry of actors) select.append(new Option(entry.name, entry.actor.uuid)); content.append(select);
-    actorUuid = await foundry.applications.api.DialogV2.prompt({window: {title: "Choose a character"}, content, rejectClose: false,
+    actorUuid = await foundry.applications.api.DialogV2.prompt({classes: ["sbe-app"], window: {title: "Choose a character"}, content, rejectClose: false,
       ok: {label: "Choose", callback: (_event, button) => button.form.elements.actor.value}});
     if (!actorUuid) return;
   }

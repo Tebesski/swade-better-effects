@@ -1,3 +1,5 @@
+import {damageFormula, sharedDamageRules} from "./damage-formulas.mjs";
+import {damageRuleKey} from "./rules.mjs";
 import {MODULE_ID} from "./constants.mjs";
 import {actorWithDefense, prepareDamage} from "./damage.mjs";
 import {wrapMethod} from "./effects.mjs";
@@ -50,6 +52,18 @@ export async function initializeSwadeTools() {
       const roll = await original(die, wild, Number(modifier || 0) + result.value, rof);
       setRollContext(roll, context);
       return roll;
+    });
+    wrapMethod(BasicRoll.prototype, "buildDamageRoll", async function (original, damage, modifier, raise, raisedie = 6) {
+      const context = makeContext(this.actor, this.item);
+      const targets = String(this.usetarget ?? "").split(",").map(id => canvas.tokens?.get(id)?.document.uuid).filter(Boolean);
+      if (targets.length) context.targetUuids = targets;
+      const rules = sharedDamageRules(context);
+      if (!rules.length) return original(damage, modifier, raise, raisedie);
+      const bonus = raise ? `+1d${raisedie}x` : "";
+      const base = `${this.explodeAllDice(damage)}${bonus}${this.prepareModifier(modifier)}`;
+      this.roll = new CONFIG.Dice.SwadeRoll(damageFormula(base, rules, true));
+      setRollContext(this.roll, {...context, damageRulesInRoll: rules.map(rule => damageRuleKey(rule))});
+      return this.roll.evaluate();
     });
     wrapMethod(RollControl.prototype, "attackTarget", function (original, target, total, ...args) {
       if (!target?.actor) return original(target, total, ...args);
@@ -107,7 +121,7 @@ export async function initializeSwadeTools() {
       try {
         const result = original(adjustedTarget, newWounds, ...rest);
         const explanation = foundry.utils.escapeHTML(`Damage ${values.damage} vs Toughness ${values.effectiveToughness}. `
-          + values.applied.map(rule => `${rule.label}: ${rule.before} → ${rule.after}`).join("; "));
+          + values.applied.map(rule => `${rule.label}: ${rule.before} → ${rule.after}${rule.formula ? ` (${rule.formula} = ${rule.rolledValue})` : ""}`).join("; "));
         this.targetShow = this.targetShow.slice(0, start) + this.targetShow.slice(start)
           .replace('class="swadetools-targetname"', `class="swadetools-targetname" data-tooltip="${explanation}"`);
         return result;

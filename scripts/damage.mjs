@@ -1,27 +1,35 @@
 import {MODULE_ID, TEMPLATE} from "./constants.mjs";
 import {renderRollNotes} from "./roll-notes.mjs";
 import {collectRules} from "./effects.mjs";
-import {documentFlags} from "./flags.mjs";
-import {calculateWounds, normalizeFlags, resolveDamage} from "./rules.mjs";
+import {calculateWounds, matchingDamageRules, resolveDamage} from "./rules.mjs";
 import {damageAP, damageIsHeavyWeapon, damageRoll, isDamageMessage, isTraitMessage, messageContext} from "./roll-context.mjs";
 import {renderChatFlags} from "./chat-flags.mjs";
 import {renderOpposedRoll} from "./opposed.mjs";
 import {moduleScriptBase} from "./module-imports.mjs";
+import {damageRulesForTarget} from "./damage-formulas.mjs";
 
 let TargetedAdapter;
 let targetedInitialization;
 const openDamage = new Map();
 
-export function prepareDamage(actor, token, message, {damage, ap, toughness, armor} = {}) {
-  const roll = damageRoll(message);
-  const context = structuredClone(messageContext(message));
-  context.hasRoll = true;
-  context.target = normalizeFlags([...documentFlags(actor), ...documentFlags(token)]);
+function baseDamage(message) {
+  const gmAdjustment = Number.parseInt(message.flags?.["swade-tools"]?.gmmod) || 0;
+  return damageRoll(message).total + gmAdjustment;
+}
+
+const tinyMelee = context => context.attacker?.includes("size-4") && context.roll?.includes("melee");
+
+export function prepareDamage(actor, token, message, {damage, ap, toughness, armor, context = messageContext(message)} = {}) {
+  const rules = damageRulesForTarget(context, actor, token);
   const defense = actor.type === "vehicle" ? actor.system.toughness : actor.system.stats.toughness;
-  const defenderRules = collectRules(actor).map(rule => ({...rule, ownerFlags: context.target}));
-  const resolved = resolveDamage({damage: damage ?? roll.total, ap: ap ?? damageAP(message), toughness: toughness ?? (actor.type === "vehicle" ? defense.total : defense.value),
-    armor: armor ?? defense.armor, context, attackerRules: context.attackerRules ?? [], defenderRules});
-  return {...resolved, flags: context.roll, immune: !!actor.hasHeavyArmor && !damageIsHeavyWeapon(message)};
+  const resolved = resolveDamage({damage: damage ?? baseDamage(message), ap: ap ?? damageAP(message), toughness: toughness ?? (actor.type === "vehicle" ? defense.total : defense.value),
+    armor: armor ?? defense.armor, skipUnrolled: true, ...rules});
+  const tiny = tinyMelee(rules.context);
+  if (tiny) resolved.damage = Math.min(resolved.damage, 1);
+  const blocked = tiny && ((actor.system.stats?.scale ?? actor.system.scale ?? 0) >= -2 || resolved.toughness > 1);
+  const immunity = blocked ? "Tiny melee cannot harm this target without a swarm."
+    : actor.hasHeavyArmor && !damageIsHeavyWeapon(message) ? "Heavy Armor requires a Heavy Weapon." : "";
+  return {...resolved, flags: rules.context.roll, immune: !!immunity, immunity};
 }
 
 function resultFor(actor, values) {
@@ -101,8 +109,7 @@ async function loadTargetedDamage() {
 export class ConditionalDamageApplicator extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
   constructor({actor, token, message, key}) {
     super(); this.actor = actor; this.token = token; this.message = message; this.sbeKey = key;
-    const roll = damageRoll(message);
-    this.damage = roll.total; this.ap = damageAP(message); this.bestSoak = 0; this.attemptedSoak = false;
+    this.damage = baseDamage(message); this.ap = damageAP(message); this.bestSoak = 0; this.attemptedSoak = false;
   }
   static DEFAULT_OPTIONS = {tag: "form", classes: ["sbe-app"], position: {width: 460}, window: {title: "Resolve Conditional Damage"},
     form: {handler: function () { this.readInputs(); this.render(); }, closeOnSubmit: false},
@@ -194,7 +201,7 @@ export async function openDamageRequest({messageUuid, tokenUuid, rollData}) {
   const key = `${messageUuid}:${tokenUuid}`;
   const existing = openDamage.get(key);
   if (existing) { existing.bringToFront(); return {opened: true}; }
-  const app = TargetedAdapter ? new TargetedAdapter({token, damage: damageRoll(message).total, ap: damageAP(message)})
+  const app = TargetedAdapter ? new TargetedAdapter({token, damage: baseDamage(message), ap: damageAP(message)})
     : new ConditionalDamageApplicator({actor, token, message, key});
   app.sbeMessage = message; app.sbeKey = key;
   openDamage.set(key, app);
@@ -209,8 +216,7 @@ export async function resolveMessageDamage(message) {
   for (const token of tokens) {
     const actor = token.actor;
     if (!actor) continue;
-    const roll = damageRoll(message);
-    const request = {messageUuid: message.uuid, tokenUuid: token.document.uuid, rollData: {total: roll.total, ap: damageAP(message),
+    const request = {messageUuid: message.uuid, tokenUuid: token.document.uuid, rollData: {total: baseDamage(message), ap: damageAP(message),
       isHeavyWeapon: !!damageIsHeavyWeapon(message), context: structuredClone(messageContext(message))}};
     const playerOwner = game.users.find(u => u.active && !u.isGM && u.character?.id === actor.id && actor.testUserPermission(u, "OWNER"))
       ?? game.users.find(u => u.active && !u.isGM && actor.testUserPermission(u, "OWNER"));
@@ -237,7 +243,9 @@ export function renderDamageMessage(message, html) {
   html.addEventListener("click", event => {
     if (!event.target.closest("button.calculate-wounds")) return;
     const tokens = game.modules.get("swade-targeted-damage")?.active ? [...game.user.targets] : canvas.tokens?.controlled ?? [];
-    if (!context.attackerRules?.length && !tokens.some(t => t.actor && collectRules(t.actor).length)) return;
+    if (!tinyMelee(context) && !context.attackerRules?.length
+      && !tokens.some(t => t.actor && (collectRules(t.actor).length
+        || [...matchingDamageRules(damageRulesForTarget(context, t.actor, t.document ?? t))].some(rule => rule.resolutionOnly)))) return;
     event.preventDefault(); event.stopImmediatePropagation();
     resolveMessageDamage(message).catch(error => ui.notifications.error(error.message, {console: true}));
   }, {capture: true});

@@ -7,6 +7,7 @@ import {catalogFlags} from "./flags.mjs";
 import {effectiveFlags, flagInputData} from "./default-flags.mjs";
 import {NOTE_PREFIX, noteBaseKey, noteChangeKey, noteSelectorForKey} from "./note-rules.mjs";
 import {cleanRollNote} from "./roll-notes.mjs";
+import {isDamageFormula} from "./damage-formulas.mjs";
 
 let Wizard;
 const openEditors = new Map();
@@ -315,8 +316,13 @@ export function initializeWizard() {
           if (!row.value.replace(/<[^>]*>/g, "").trim() && !/<img\b/i.test(row.value)) throw new Error("Enter some text for each note.");
           continue;
         }
-        if ((hasCondition(row.predicate) || row.key.startsWith("sbe.targetRoll.") || row.key.startsWith("sbe.powerRoll.") || row.key === MAP_KEY) && (!selectorForKey(row.key) || !Number.isFinite(Number(row.value)) || !(row.type in OPERATIONS))) {
-          throw new Error("This change does not support automatic conditions, or its value is not a finite number.");
+        if (hasCondition(row.predicate) || row.key.startsWith("sbe.targetRoll.") || row.key.startsWith("sbe.powerRoll.") || row.key === MAP_KEY) {
+          const selector = selectorForKey(row.key);
+          if (!selector || !Object.hasOwn(OPERATIONS, row.type)) throw new Error("This change does not support automatic conditions.");
+          if (!Number.isFinite(Number(row.value))) {
+            if (selector !== "outgoing-damage") throw new Error("Enter a finite number for this change.");
+            if (!isDamageFormula(row.value)) throw new Error("Enter a valid Damage formula, such as 1d6x+2.");
+          }
         }
       }
       const changes = this.rows.map(({label, predicate, conditionsOpen, numericValue, noteText, ...change}) => ({...change,
@@ -370,7 +376,7 @@ export async function editEffectSource(source, name) {
 
 export async function chooseEditor(effect) {
   if (!effect?.isOwner) return effect?.sheet.render({force: true});
-  return foundry.applications.api.DialogV2.wait({window: {title: `Edit Effect: ${effect.name}`, icon: "fa-solid fa-person-rays"}, buttons: [
+  return foundry.applications.api.DialogV2.wait({classes: ["sbe-app"], window: {title: `Edit Effect: ${effect.name}`, icon: "fa-solid fa-person-rays"}, buttons: [
     {action: "aegis", label: "Effect builder", icon: "fa-solid fa-shield-quartered", callback: () => openAegis(effect.parent, effect)},
     {action: "standard", label: "Manual edit", icon: "fa-solid fa-sliders", callback: () => effect.sheet.render({force: true})}
   ], rejectClose: false});
@@ -398,7 +404,7 @@ export class EffectItemSheet extends foundry.applications.api.HandlebarsApplicat
       select.name = "effectId";
       select.setAttribute("aria-label", "Effect");
       for (const entry of effects) select.append(new Option(entry.name, entry.id));
-      const id = await foundry.applications.api.DialogV2.prompt({window: {title: this.document.name}, content: select.outerHTML,
+      const id = await foundry.applications.api.DialogV2.prompt({classes: ["sbe-app"], window: {title: this.document.name}, content: select.outerHTML,
         ok: {label: editor === "aegis" ? "Effect builder" : "Manual edit",
           callback: (_event, button) => button.form.elements.effectId.value}, rejectClose: false});
       if (!id) return;
@@ -421,8 +427,13 @@ export function injectEditorButtons(app, html) {
       const button = event.target.closest('[data-action="openEffect"], [data-action="editEffect"], .effect-edit');
       const row = button?.closest("[data-effect-uuid], [data-effect-id]");
       if (!row) return;
+      const {effectUuid, effectId, parentId} = row.dataset;
+      // The actor's Effects tab also lists effects owned by its embedded items.
+      const parent = parentId && parentId !== doc.id ? doc.items?.get(parentId) : doc;
+      const effect = effectUuid ? foundry.utils.fromUuid(effectUuid) : parent?.effects.get(effectId);
+      if (!effect) return;
       event.preventDefault(); event.stopImmediatePropagation();
-      Promise.resolve(row.dataset.effectUuid ? foundry.utils.fromUuid(row.dataset.effectUuid) : doc.effects.get(row.dataset.effectId)).then(chooseEditor).catch(error => ui.notifications.error(error.message));
+      Promise.resolve(effect).then(chooseEditor).catch(error => ui.notifications.error(error.message));
     }, {capture: true});
   } else if (doc.documentName === "ActiveEffect" && doc.isOwner && !html.querySelector(".sbe-open-aegis")) {
     const button = document.createElement("button"); button.type = "button"; button.className = "sbe-open-aegis"; button.textContent = "Edit in A.E.G.I.S. (conditions)";

@@ -1,8 +1,9 @@
+import {isBasicSwadePack} from "../../swade-better-setting/scripts/compendium-sources.mjs";
 import {EFFECT_TYPE, MODULE_ID} from "./constants.mjs";
 
 const FILTER = "effectPickerSources";
 const esc = value => foundry.utils.escapeHTML(String(value ?? ""));
-const packs = () => game.packs.filter(pack => pack.visible && pack.documentName === "Item");
+const packs = () => game.packs.filter(pack => pack.visible && pack.documentName === "Item" && !isBasicSwadePack(pack));
 
 export function registerEffectPicker() {
   game.settings.register(MODULE_ID, FILTER, {scope: "user", config: false, type: Object, default: {}});
@@ -56,7 +57,7 @@ export async function pickEffect() {
     <div class="sbe-effect-picker-results">${entries.map((entry, index) => `<label data-source="${esc(entry.source)}" data-search="${esc(`${entry.name} ${entry.group}`.toLowerCase())}">
       <input type="radio" name="entry" value="${index}"><img src="${esc(entry.img || "icons/svg/aura.svg")}" alt=""><span>${esc(entry.name)}<small>${esc(entry.group)}</small></span></label>`).join("")}
       <p data-empty>No effects match the selected sources and search.</p></div></div>`;
-  return foundry.applications.api.DialogV2.prompt({window: {title: "Choose an effect", icon: "fa-solid fa-list"}, position: {width: 480}, content, rejectClose: false,
+  return foundry.applications.api.DialogV2.prompt({classes: ["sbe-app"], window: {title: "Choose an effect", icon: "fa-solid fa-list"}, position: {width: 480}, content, rejectClose: false,
     render: (_event, dialog) => {
       const root = dialog.element.querySelector(".sbe-effect-picker");
       const search = root.querySelector('input[type="search"]');

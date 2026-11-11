@@ -59,3 +59,9 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
 });
 Hooks.on("renderChatMessageHTML", renderDamageMessage);
 Hooks.on("renderChatMessageHTML", renderRollRequest);
+Hooks.on("targetToken", user => {
+  if (user !== game.user) return;
+  for (const app of foundry.applications.instances.values()) {
+    if (app instanceof game.swade.RollDialog && app.isDamageRoll) void app.render();
+  }
+});
