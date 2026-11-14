@@ -16,6 +16,17 @@ test("untrained requests include localized native names and retain exact TNs", (
   assert.equal(traitRequest({trait: "Notice", tn: ""}, attributes).targetNumber, 4);
   assert.equal(traitRequest({trait: "Notice", attribute: "spirit"}, attributes).attribute, "spirit");
 });
+test("requests store an optional whole-number penalty independently of TN", () => {
+  for (const penalty of [2, "-2"]) {
+    const request = traitRequest({trait: "Spirit", tn: 6, penalty}, attributes);
+    assert.equal(request.penalty, -2);
+    assert.equal(request.targetNumber, 6);
+    assert.equal(validateRequest(request), true);
+    assert.equal(validateRequest({...request, penalty: 2}), false);
+  }
+  assert.equal(traitRequest({trait: "Notice", penalty: ""}, attributes).penalty, undefined);
+  assert.throws(() => traitRequest({trait: "Notice", penalty: "1.5"}, attributes), /whole number/);
+});
 test("invalid request data cannot create nonfinite targets or malformed templates", () => {
   assert.throws(() => traitRequest({trait: " "}, attributes));
   assert.throws(() => traitRequest({trait: "Athletics", tn: "Infinity"}, attributes));

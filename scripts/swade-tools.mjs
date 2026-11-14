@@ -113,14 +113,14 @@ export async function initializeSwadeTools() {
       }});
       const roll = this.roll;
       const start = this.targetShow.length;
-      const adjustedTotal = values.damage - this.gmmod;
+      const adjustedTotal = (values.immune ? values.effectiveToughness - 1 : values.damage) - this.gmmod;
       this.roll = new Proxy(roll, {get(object, key) {
         if (key === "total") return adjustedTotal;
         return Reflect.get(object, key, object);
       }});
       try {
         const result = original(adjustedTarget, newWounds, ...rest);
-        const explanation = foundry.utils.escapeHTML(`Damage ${values.damage} vs Toughness ${values.effectiveToughness}. `
+        const explanation = foundry.utils.escapeHTML(`${values.immunity || `Damage ${values.damage} vs Toughness ${values.effectiveToughness}.`} `
           + values.applied.map(rule => `${rule.label}: ${rule.before} → ${rule.after}${rule.formula ? ` (${rule.formula} = ${rule.rolledValue})` : ""}`).join("; "));
         this.targetShow = this.targetShow.slice(0, start) + this.targetShow.slice(start)
           .replace('class="swadetools-targetname"', `class="swadetools-targetname" data-tooltip="${explanation}"`);

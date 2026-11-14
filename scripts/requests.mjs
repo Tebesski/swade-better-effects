@@ -5,6 +5,7 @@ import {messageContext} from "./roll-context.mjs";
 import {opposedResult} from "./opposed-context.mjs";
 import {opposedTN} from "./opposed.mjs";
 import {openRollRequestLibrary, registerRollRequestSettings, savedRollRequests, saveRollRequest} from "./request-library.mjs";
+import {lingeringDamageRoll, openDamageRequest} from "./damage.mjs";
 
 const attributes = () => Object.entries(CONFIG.SWADE.attributes).map(([key, value]) => ({key, name: game.i18n.localize(value.long)}));
 const setting = () => game.modules.get("swade-better-setting");
@@ -89,16 +90,16 @@ class RollRequestComposer extends foundry.applications.api.HandlebarsApplication
     if (!validateRequest(request)) return;
     this.templateId = entry.id;
     this.selected = {kind: request.kind, name: request.name, attribute: request.attribute};
-    this.values = {name: entry.name, trait: request.name, tn: request.targetNumber, flags: request.flags.join(", "), recipients: request.recipients ?? []};
+    this.values = {name: entry.name, trait: request.name, tn: request.targetNumber, penalty: request.penalty, flags: request.flags.join(", "), recipients: request.recipients ?? []};
     if (render) this.render();
   }
   read(data = new foundry.applications.ux.FormDataExtended(this.element).object) {
     if (!game.user.isGM) throw new Error("Only a GM or Assistant GM can request a trait roll.");
     const selected = this.selected && traitName(this.selected.name) === traitName(data.trait) ? this.selected : {};
-    const request = traitRequest({...selected, trait: data.trait, tn: data.tn, flags: data.flags}, attributes(), [game.i18n.localize("SWADE.Unskilled")]);
+    const request = traitRequest({...selected, trait: data.trait, tn: data.tn, penalty: data.penalty, flags: data.flags}, attributes(), [game.i18n.localize("SWADE.Unskilled")]);
     request.recipients = [...this.element.querySelectorAll('input[name="recipient"]:checked')].map(input => input.value).filter(id => game.users.get(id) && !game.users.get(id).isGM);
     rememberFlags(request.flags);
-    this.values = {name: String(data.name ?? "").trim(), trait: data.trait, tn: request.targetNumber, flags: request.flags.join(", "), recipients: request.recipients};
+    this.values = {name: String(data.name ?? "").trim(), trait: data.trait, tn: request.targetNumber, penalty: request.penalty, flags: request.flags.join(", "), recipients: request.recipients};
     return request;
   }
   async saveTemplate() {
@@ -111,7 +112,7 @@ class RollRequestComposer extends foundry.applications.api.HandlebarsApplication
     if (this.onSave) {
       const request = this.read({...data, tn: 4});
       await this.onSave({trait: request.name, kind: request.kind, attribute: request.attribute ?? "", flags: request.flags.join(", "),
-        tn: data.tn === "" ? 4 : data.tn, recipients: request.recipients, name: this.values.name});
+        tn: data.tn === "" ? 4 : data.tn, penalty: request.penalty ?? 0, recipients: request.recipients, name: this.values.name});
       await this.close();
       return;
     }
@@ -142,6 +143,13 @@ export async function generateRollRequest(request) {
   return CONFIG.ChatMessage.documentClass.create({content, speaker: {alias: game.user.name}, whisper, flags: {[MODULE_ID]: {rollRequest: request}}}, {messageMode: whisper.length ? "gm" : "public"});
 }
 
+export async function postLingeringRequest(request, lingering, {id, name}) {
+  const content = await foundry.applications.handlebars.renderTemplate(`${TEMPLATE}/roll-request-card.hbs`,
+    {request, flags: request.flags.join(", "), lingering: name});
+  return CONFIG.ChatMessage.documentClass.create({_id: id, content, speaker: {alias: name},
+    flags: {[MODULE_ID]: {rollRequest: request, lingeringRequest: lingering}}}, {keepId: true, messageMode: "public"});
+}
+
 function availableActors() {
   const choices = new Map();
   const add = (actor, token) => {
@@ -158,6 +166,16 @@ function availableActors() {
 export async function rollRequestedTrait(message, actorUuid) {
   const request = message?.getFlag(MODULE_ID, "rollRequest");
   if (!message?.visible || message.isContentVisible === false || game.messages.get(message.id) !== message || !message.author?.isGM || !validateRequest(request)) throw new Error("This roll request is not accessible.");
+  const lingering = message.getFlag(MODULE_ID, "lingeringRequest");
+  if (lingering) {
+    const effect = foundry.utils.fromUuidSync(lingering.effectUuid);
+    const state = effect?.getFlag(MODULE_ID, "lingeringState");
+    if (!effect?.modifiesActor || !effect.actor?.isOwner || state?.requestId !== message.id || state?.resolved) {
+      throw new Error("This lingering roll is no longer available.");
+    }
+    const token = lingering.tokenUuid ? foundry.utils.fromUuidSync(lingering.tokenUuid) : null;
+    return performRequestedTrait(message, request, effect.actor, token, true);
+  }
   const actors = availableActors();
   if (!actors.length) throw new Error("Select a token you own or assign a character first.");
   if (!actorUuid && actors.length > 1) {
@@ -170,8 +188,19 @@ export async function rollRequestedTrait(message, actorUuid) {
   const choice = actorUuid ? actors.find(entry => entry.actor.uuid === actorUuid) : actors[0];
   if (!choice?.actor.isOwner) throw new Error("You do not own that actor.");
   const {actor, token} = choice;
+  return performRequestedTrait(message, request, actor, token);
+}
+
+function performRequestedTrait(message, request, actor, token, lingering = false) {
   const options = {effectFlags: request.flags, sbeRequest: {...structuredClone(request), messageUuid: message.uuid, tokenUuid: token?.uuid ?? null, whisper: [...message.whisper]},
     title: `${request.name} · TN ${request.targetNumber}`, flavour: `${foundry.utils.escapeHTML(request.name)} · TN ${request.targetNumber}`};
+  if (lingering) {
+    options.isRerollable = false;
+    options.sbeRequest.lingering = true;
+    options.sbeRequest.actorUuid = actor.uuid;
+    options.sbeRequest.whisper = [];
+  }
+  options.additionalMods = request.penalty ? [{label: "Request Penalty", value: request.penalty}] : [];
   if (request.kind === "attribute") {
     if (!attributes().some(entry => entry.key === request.trait)) throw new Error("This request has an invalid attribute.");
     return actor.rollAttribute(request.trait, options);
@@ -182,7 +211,7 @@ export async function rollRequestedTrait(message, actorUuid) {
   // Use the native temporary-skill path: no item is added to the actor.
   const temporary = new CONFIG.Item.documentClass({name: request.name, type: "skill", system: {swid: "unskilled-attempt", attribute: request.attribute ?? "agility", die: {sides: 4, modifier: 0}, "wild-die": {sides: 6}}});
   options.effectFlags = [...request.flags, "untrained"];
-  options.additionalMods = [{label: game.i18n.localize("SWADE.Unskilled"), value: -2}];
+  options.additionalMods.push({label: game.i18n.localize("SWADE.Unskilled"), value: -2});
   return actor.rollSkill(null, options, temporary);
 }
 
@@ -190,20 +219,71 @@ export function renderRollRequest(message, html) {
   if (message.isContentVisible === false) return;
   const request = message.getFlag(MODULE_ID, "rollRequest");
   if (request && message.author?.isGM && validateRequest(request)) {
+    const lingering = message.getFlag(MODULE_ID, "lingeringRequest");
     for (const button of html.querySelectorAll(".sbe-request-roll")) {
-      button.disabled = !availableActors().length;
-      button.addEventListener("click", event => {
+      const effect = lingering && foundry.utils.fromUuidSync(lingering.effectUuid);
+      const state = effect?.getFlag(MODULE_ID, "lingeringState");
+      button.disabled = lingering ? !!lingering.resolved || !(effect?.modifiesActor && effect.actor?.isOwner && state?.requestId === message.id && !state.resolved)
+        : !availableActors().length;
+      button.addEventListener("click", async event => {
         event.preventDefault(); event.stopPropagation();
-        rollRequestedTrait(message).catch(error => ui.notifications.error(error.message, {console: true}));
+        if (lingering) button.disabled = true;
+        try { await rollRequestedTrait(message); }
+        catch (error) { ui.notifications.error(error.message, {console: true}); }
+        finally {
+          if (lingering) {
+            const latest = effect?.getFlag(MODULE_ID, "lingeringState");
+            button.disabled = !(effect?.modifiesActor && latest?.requestId === message.id && !latest.resolved);
+          }
+        }
       });
     }
   }
   if (!message.isRoll) return;
   const context = messageContext(message);
   if (context.request && Number.isFinite(context.request.targetNumber) && Number.isFinite(opposedTN(message))) {
-    const result = opposedResult(opposedTN(message), context.request.targetNumber, !!message.significantRoll?.isCritfail);
+    const result = message.getFlag(MODULE_ID, "lingeringResult")?.result
+      ?? opposedResult(opposedTN(message), context.request.targetNumber, !!message.significantRoll?.isCritfail);
     const summary = document.createElement("p"); summary.className = "sbe-request-result";
     summary.textContent = `Requested roll · TN ${context.request.targetNumber}: ${result.outcome}${result.raises ? ` · ${result.raises} raise${result.raises === 1 ? "" : "s"}` : ""}`;
     (html.querySelector(".message-content") ?? html).append(summary);
+    renderLingeringResult(message, summary);
   }
+}
+
+function renderLingeringResult(message, summary) {
+  const result = message.getFlag(MODULE_ID, "lingeringResult");
+  if (!result) return;
+  const note = document.createElement("section");
+  note.className = "sbe-roll-notes sbe-lingering-result";
+  for (const text of [result.text, result.ended, result.applied?.length ? `Applied: ${result.applied.join(", ")}` : "", result.effectError]) {
+    if (!text) continue;
+    const line = document.createElement("p");
+    line.textContent = text;
+    note.append(line);
+  }
+  const damage = lingeringDamageRoll(message);
+  if (damage) {
+    const details = document.createElement("details");
+    const heading = document.createElement("summary");
+    heading.textContent = `Damage: ${damage.roll.total} (${damage.roll.formula})`;
+    details.append(heading);
+    details.addEventListener("toggle", async () => {
+      if (!details.open || details.dataset.loaded) return;
+      details.dataset.loaded = "true";
+      details.insertAdjacentHTML("beforeend", await damage.roll.getTooltip());
+    });
+    note.append(details);
+    const tokenUuid = damage.context.targetUuids[0];
+    const token = tokenUuid ? foundry.utils.fromUuidSync(tokenUuid) : null;
+    if (token?.actor?.isOwner) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Resolve Damage";
+      button.addEventListener("click", () => openDamageRequest({messageUuid: message.uuid, tokenUuid})
+        .catch(error => ui.notifications.error(error.message, {console: true})));
+      note.append(button);
+    }
+  }
+  if (note.childElementCount) summary.after(note);
 }

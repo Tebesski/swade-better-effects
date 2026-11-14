@@ -1,0 +1,15 @@
+<details data-outcome="{{key}}">
+  <summary>{{label}}{{#if raise}} (at least {{threshold}}){{/if}}</summary>
+  {{#if raise}}<label>Minimum raises <input type="number" data-field="threshold" min="1" step="1" value="{{threshold}}"></label>{{/if}}
+  <label>Progress gained <input type="number" data-field="progress" min="0" step="1" value="{{progress}}"></label>
+  <label>Damage formula <input type="text" data-field="damage" value="{{damage}}" placeholder="1d6x+2"></label>
+  <label>Chat message <textarea data-field="message" rows="2">{{message}}</textarea></label>
+  <div class="sbe-outcome-effect" role="group" aria-label="Apply effect">
+    <strong>Apply effect</strong>
+    <input type="hidden" data-field="effect" value="{{effectUuid}}">
+    <span class="sbe-outcome-effect-hint">Drop an effect or an item containing effects</span>
+    <button type="button" class="sbe-outcome-effect-link" hidden><img alt=""><span></span></button>
+    <button type="button" class="sbe-outcome-effect-clear" aria-label="Clear effect" hidden><i class="fa-solid fa-xmark" inert></i></button>
+  </div>
+  {{#if optional}}<button type="button" data-remove-outcome>Remove outcome</button>{{/if}}
+</details>

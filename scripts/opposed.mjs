@@ -131,7 +131,7 @@ export function installOpposedRolls() {
       if (token?.actor) messageData.speaker = ChatMessage.getSpeaker({actor: token.actor, token, scene: token.parent});
     }
     setRollContext(this, snapshotRollNotes(context, source));
-    return original(messageData, options);
+    return original(messageData, context.request?.lingering ? {...options, messageMode: "public"} : options);
   });
   Hooks.on("renderRollDialog", app => {
     if (!app.ctx?.roll) return;
@@ -144,8 +144,9 @@ export function installOpposedRolls() {
     label.textContent = `${opposition ? "Opposed roll" : "Requested roll"} · Target number: ${(opposition ?? request).targetNumber}`;
     (app.element.querySelector(".window-content") ?? app.element).prepend(label);
     const visibility = opposition ?? request;
-    if (visibility?.whisper?.length) {
-      const mode = app.element.querySelector("#messageMode"); mode.value = visibility.blind ? "blind" : "gm";
+    if (visibility?.lingering || visibility?.whisper?.length) {
+      const mode = app.element.querySelector("#messageMode");
+      mode.value = visibility.lingering ? "public" : visibility.blind ? "blind" : "gm";
       mode.disabled = true; mode.title = opposition ? "Visibility follows the original roll." : "Visibility follows the roll request.";
     }
   });

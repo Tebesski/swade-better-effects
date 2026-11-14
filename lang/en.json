@@ -1,5 +1,11 @@
 {
   "TYPES.Item.swade-better-effects.effect": "Effect",
   "SBE.Effect": "Effect",
-  "SBE.Flags": "Flags"
+  "SBE.Flags": "Flags",
+  "SBE.InitiativeCards": "Action Cards",
+  "SBE.JokerBenny": "+1 Benny · {names}",
+  "SBE.JokerBennies": "+{count} Bennies · {names}",
+  "SBE.Immunity": "Immunity",
+  "SBE.ImmuneToRoll": "{name} is immune to this roll{flags}.",
+  "SBE.ImmuneToEffect": "{name} is immune to {effect}{flags}."
 }

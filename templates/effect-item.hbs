@@ -1,5 +1,20 @@
 <section class="standard-form sbe-effect-item">
   <header class="sbe-heading"><img src="{{item.img}}" width="56" height="56" alt=""><h2>{{item.name}}</h2></header>
+  <section class="sbe-effect-descriptions">
+    <h3>{{localize "Description"}}</h3>
+    {{#each descriptions}}
+      {{#if ../multiple}}<h4>{{name}}</h4>{{/if}}
+      {{#if editable}}
+        <prose-mirror toggled name="description.{{id}}" value="{{value}}" data-effect-id="{{id}}" data-document-uuid="{{uuid}}">
+          {{#if html}}{{{html}}}{{else}}<p class="hint">{{localize "SWADE.NoDescription"}}</p>{{/if}}
+        </prose-mirror>
+      {{else}}
+        {{#if html}}{{{html}}}{{else}}<p class="hint">{{localize "SWADE.NoDescription"}}</p>{{/if}}
+      {{/if}}
+    {{else}}
+      <p class="hint">{{localize "SWADE.NoDescription"}}</p>
+    {{/each}}
+  </section>
   <div class="sbe-presets">
     <button type="button" data-action="aegis" {{#unless editable}}disabled{{/unless}}>Effect builder</button>
     <button type="button" data-action="standard">Manual edit</button>

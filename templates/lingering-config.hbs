@@ -1,0 +1,26 @@
+<label class="checkbox"><input type="checkbox" name="enabled" {{checked config.enabled}}> Lingering</label>
+<fieldset class="sbe-lingering-options">
+  <label>Request roll
+    <select name="timing">
+      <option value="end" {{#unless start}}selected{{/unless}}>End of turn</option>
+      <option value="start" {{#if start}}selected{{/if}}>Start of turn</option>
+    </select>
+  </label>
+  <div class="sbe-lingering-trait">
+    <label>Trait
+      <input type="text" name="trait" list="sbe-lingering-traits" value="{{config.trait}}" placeholder="Skill or attribute">
+      <datalist id="sbe-lingering-traits">
+        {{#each traits}}<option value="{{value}}">{{label}}</option>{{/each}}
+      </datalist>
+    </label>
+    <label>TN <input type="number" name="tn" value="{{config.tn}}"></label>
+    <label>Successes needed <input type="number" name="required" value="{{config.required}}" min="1" step="1"></label>
+  </div>
+  <div class="sbe-lingering-outcomes">
+    {{#each rows}}{{{this}}}{{/each}}
+  </div>
+  <div class="sbe-presets">
+    <button type="button" data-add-outcome="critical">Add Critical Failure</button>
+    <button type="button" data-add-outcome="raise">Add Raise</button>
+  </div>
+</fieldset>

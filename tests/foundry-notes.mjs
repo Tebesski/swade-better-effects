@@ -59,7 +59,7 @@ try {
   await page.waitForFunction(() => canvas.ready && canvas.tokens.placeables.some(token => token.name === "Defender"));
   await page.evaluate(() => canvas.tokens.placeables.find(token => token.name === "Defender").setTarget(true));
   const wizard = page.locator(".sbe-aegis"); await wizard.waitFor(); await wizard.locator('[name="name"]').fill("Wizard notes");
-  await (await openGroup("attribute")).getByRole("button", {name: "Add", exact: true}).click();
+  await (await openGroup("attribute")).getByRole("button", {name: "Attribute", exact: true}).click();
   const attribute = wizard.locator('.sbe-change[data-index="0"]');
   await attribute.locator("input.value").fill("2"); await attribute.locator("input.value").press("Tab");
   const geometry = await attribute.evaluate(row => {
@@ -70,16 +70,16 @@ try {
   if (shots) await wizard.screenshot({path: `${shots}/aegis-aligned-components.png`, animations: "disabled"});
   await attribute.getByRole("button", {name: "Remove change", exact: true}).click();
   pass("attribute component, operation, value and trash control align on the same baseline");
-  await (await openGroup("globalMod")).getByRole("button", {name: "Add Attack", exact: true}).click();
+  await (await openGroup("globalMod")).getByRole("button", {name: "Attack", exact: true}).click();
   const attack = wizard.locator('.sbe-change[data-index="0"]');
   await writeNote(attack, "Attack reminder: burning targets. [[/r 1d6]]", true);
   assert.equal(await attack.locator(".sbe-note-preview :is(strong, b)").count(), 1);
   await attack.locator(".sbe-condition-details > summary").click();
   await attack.locator('[data-condition-action="add-condition"]').click();
   await attack.getByLabel("Flag", {exact: true}).fill("fire"); await attack.getByLabel("Flag", {exact: true}).press("Tab");
-  await (await openGroup("globalMod")).getByRole("button", {name: "Add Traits", exact: true}).click();
+  await (await openGroup("globalMod")).getByRole("button", {name: "Traits", exact: true}).click();
   await writeNote(wizard.locator('.sbe-change[data-index="1"]'), "Trait reminder: consider your options.");
-  await (await openGroup("globalMod")).getByRole("button", {name: "Add Damage", exact: true}).click();
+  await (await openGroup("globalMod")).getByRole("button", {name: "Damage", exact: true}).click();
   await wizard.locator('.sbe-change[data-index="2"]').getByLabel("Change", {exact: true}).selectOption("system.stats.globalMods.damage");
   await writeNote(wizard.locator('.sbe-change[data-index="2"]'), `Damage reminder. ${"This longer rule stays in a scrolling note area. ".repeat(70)}`);
   if (shots) await wizard.screenshot({path: `${shots}/aegis-roll-notes.png`, animations: "disabled"});

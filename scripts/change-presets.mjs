@@ -1,6 +1,6 @@
 export const TARGET_ROLL_PREFIX = "sbe.targetRoll.";
 import {MODIFY_FLAG_KEY} from "./flag-changes.mjs";
-import {MAP_KEY} from "./constants.mjs";
+import {ADD_ITEM_KEY, DEFENSES, MAP_KEY} from "./constants.mjs";
 export const globalKind = key => key.startsWith(TARGET_ROLL_PREFIX) ? key.slice(TARGET_ROLL_PREFIX.length)
   : key.startsWith("system.stats.globalMods.") ? key.slice("system.stats.globalMods.".length) : null;
 
@@ -23,11 +23,15 @@ export function changeGroups(context) {
   for (const preset of context.otherPresets) if (!claimed.has(preset.key)) other.push(group(preset.key, preset.label, [preset]));
   const targeting = group("targeting", "Modify targeting roll", globals.map(p => ({...p, key: `${TARGET_ROLL_PREFIX}${globalKind(p.key)}`})));
   other.push(targeting);
-  other.push(group("flag", "Modify flag", [{key: MODIFY_FLAG_KEY, label: "Modify flag"}]));
-  other.push(group("map", "Modify MAP", [{key: MAP_KEY, label: "Modify MAP"}]));
-  other.push(group("power-roll", "No Power Points", [
-    {key: "sbe.powerRoll.power-preparation", label: "Power Preparation"},
-    {key: "sbe.powerRoll.power-maintain", label: "Power Maintenance"}
-  ]));
-  return {global, other, all: [...global, ...other]};
+  const better = [
+    group("power-roll", "No Power Points", [
+      {key: "sbe.powerRoll.power-preparation", label: "Power Preparation"},
+      {key: "sbe.powerRoll.power-maintain", label: "Power Maintenance"}
+    ]),
+    group("map", "MAP modifier", [{key: MAP_KEY, label: "MAP modifier"}]),
+    group("flag", "Flag rule", [{key: MODIFY_FLAG_KEY, label: "Flag rule"}]),
+    ...Object.entries(DEFENSES).map(([key, {selector, label}]) => group(selector, label, [{key, label}])),
+    group("add-item", "Add Item", [{key: ADD_ITEM_KEY, label: "Add Item"}])
+  ];
+  return {global, other, better, all: [...global, ...other, ...better]};
 }

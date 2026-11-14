@@ -1,0 +1,21 @@
+<ul class="sbe-initiative-cards" aria-label="{{localize 'SBE.InitiativeCards'}}">
+  {{#each rows}}
+    <li>
+      <div class="sbe-initiative-row">
+        {{#if picked.img}}<img src="{{picked.img}}" alt="" width="20" height="28">{{/if}}
+        <strong>{{combatant}}</strong>
+        <span>{{picked.name}}{{#if isRedraw}} <small>({{localize 'SWADE.Combat.Redraw'}})</small>{{/if}}</span>
+      </div>
+      {{#if discarded}}
+        <details class="sbe-initiative-discards">
+          <summary>{{localize 'SWADE.Combat.DiscardedCards'}}</summary>
+          <ul>
+            {{#each discarded}}
+              <li>{{#if img}}<img src="{{img}}" alt="" width="20" height="28">{{/if}}{{name}}</li>
+            {{/each}}
+          </ul>
+        </details>
+      {{/if}}
+    </li>
+  {{/each}}
+</ul>

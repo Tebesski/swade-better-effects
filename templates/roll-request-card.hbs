@@ -1,1 +1,7 @@
-<section class="sbe-request-card"><h3><i class="fa-solid fa-dice" inert></i> {{request.name}}</h3><p>Target number: <strong>{{request.targetNumber}}</strong></p><button type="button" class="sbe-request-roll">Roll {{request.name}}</button>{{#if flags}}<details class="sbe-chat-flags"><summary>Flags</summary><p>{{flags}}</p></details>{{/if}}</section>
+<section class="sbe-request-card">
+  <h3><i class="fa-solid fa-dice" inert></i> {{request.name}}</h3>
+  {{#if lingering}}<p>{{lingering}}</p>{{/if}}
+  <p>Target number: <strong>{{request.targetNumber}}</strong>{{#if request.penalty}} · Penalty: <strong>{{request.penalty}}</strong>{{/if}}</p>
+  <button type="button" class="sbe-request-roll">Roll {{request.name}}</button>
+  {{#if flags}}<details class="sbe-chat-flags"><summary>Flags</summary><p>{{flags}}</p></details>{{/if}}
+</section>

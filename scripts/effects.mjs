@@ -1,4 +1,4 @@
-import {EFFECT_TYPE, MAP_KEY, MODULE_ID} from "./constants.mjs";
+import {ADD_ITEM_KEY, DEFENSES, EFFECT_TYPE, MAP_KEY, MODULE_ID} from "./constants.mjs";
 import {changeSignature, conditionFor, hasCondition, normalizeFlags, selectorForKey} from "./rules.mjs";
 import {documentFlags} from "./flags.mjs";
 import {MODIFY_FLAG_KEY} from "./flag-changes.mjs";
@@ -29,7 +29,7 @@ export function collectEffectRules(effects, ownerFlags) {
     for (const [index, change] of changes.entries()) {
       const predicate = conditionFor(change, index, flags.conditions);
       const selector = selectorForKey(change.key);
-      if (selector && (hasCondition(predicate) || change.key.startsWith("sbe.targetRoll.") || change.key === MAP_KEY || selector.startsWith("power-roll:"))) result.push({selector, predicate: structuredClone(predicate ?? {op: "all", children: []}), type: change.type, value: change.value,
+      if (selector && (hasCondition(predicate) || change.key.startsWith("sbe.targetRoll.") || change.key === MAP_KEY || Object.hasOwn(DEFENSES, change.key) || selector.startsWith("power-roll:"))) result.push({selector, predicate: structuredClone(predicate ?? {op: "all", children: []}), type: change.type, value: change.value,
         priority: change.priority ?? undefined, label: effect.name, ownerFlags});
     }
   }
@@ -64,7 +64,8 @@ export function collectRollNotes(actor, item) {
 
 export function installConditionGate() {
   wrapMethod(CONFIG.ActiveEffect.documentClass.prototype, "shouldApplyChange", function (original, change, options) {
-    if (change.key.startsWith(NOTE_PREFIX) || change.key.startsWith("sbe.targetRoll.") || change.key.startsWith("sbe.powerRoll.") || change.key === MODIFY_FLAG_KEY || change.key === MAP_KEY) return false;
+    if (change.key.startsWith(NOTE_PREFIX) || change.key.startsWith("sbe.targetRoll.") || change.key.startsWith("sbe.powerRoll.") ||
+      [MODIFY_FLAG_KEY, MAP_KEY, ADD_ITEM_KEY].includes(change.key) || Object.hasOwn(DEFENSES, change.key)) return false;
     const conditions = this.getFlag(MODULE_ID, "conditions");
     if (!conditions?.length) return original(change, options);
     // A standard-editor reorder must never turn a resistance into an unconditional bonus.
@@ -82,17 +83,21 @@ export async function applyEffectTemplate(template, actor) {
   if (template.testUserPermission && !template.testUserPermission(game.user, "LIMITED")) throw new Error("You cannot access this Effect template.");
   const effects = template.effects?.contents ?? template.effects ?? [];
   if (!effects.length) throw new Error("This Effect template is empty. Finish creating it in A.E.G.I.S. first.");
-  const data = effects.map(effect => {
-    const source = effect.toObject ? effect.toObject() : foundry.utils.deepClone(effect);
-    for (const key of ["_id", "_stats", "folder", "sort"]) delete source[key];
-    source.transfer = false;
-    source.origin = template.uuid ?? template._stats?.compendiumSource ?? null;
-    source.start = {time: game.time.worldTime, combat: game.combat?.id ?? null, round: game.combat?.round ?? null, turn: game.combat?.turn ?? null};
-    source.duration = {...source.duration, expired: false};
-    source.flags ??= {}; source.flags[MODULE_ID] = {...source.flags[MODULE_ID], templateUuid: template.uuid ?? null};
-    return source;
-  });
+  const data = effects.map(effect => effectApplicationData(effect, template.uuid ?? template._stats?.compendiumSource ?? null));
   return actor.createEmbeddedDocuments("ActiveEffect", data);
+}
+
+export function effectApplicationData(effect, origin) {
+  const source = effect.toObject ? effect.toObject() : foundry.utils.deepClone(effect);
+  for (const key of ["_id", "_stats", "folder", "sort"]) delete source[key];
+  source.transfer = false;
+  source.origin = origin;
+  source.start = CONFIG.ActiveEffect.documentClass.getEffectStart();
+  source.duration = {...source.duration, expired: false};
+  source.flags ??= {};
+  const flags = source.flags[MODULE_ID] = {...source.flags[MODULE_ID], templateUuid: origin};
+  delete flags.lingeringState;
+  return source;
 }
 
 export async function applyToSelected(template) {

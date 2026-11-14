@@ -1,5 +1,5 @@
 // No Foundry globals: this is also the executable rules specification used by tests.
-import {MAP_KEY} from "./constants.mjs";
+import {DEFENSES, MAP_KEY} from "./constants.mjs";
 export function normalizeFlag(value) {
   return String(value ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80).replace(/-+$/g, "");
@@ -73,6 +73,7 @@ export function conditionFor(change, index, conditions = []) {
 
 export function selectorForKey(key) {
   if (key === MAP_KEY) return "map";
+  if (Object.hasOwn(DEFENSES, key)) return DEFENSES[key].selector;
   if (/^sbe\.powerRoll\.(power-preparation|power-maintain)$/.test(key)) return `power-roll:${key.split(".").at(-1)}`;
   if (key.startsWith("sbe.targetRoll.")) return `target-roll:${key.slice("sbe.targetRoll.".length)}`;
   const skill = key.match(/^@Skill\{(.+)\}\[system\.die\.modifier\]$/);
@@ -121,11 +122,15 @@ export function resolveMapPenalty({penalty, context = {}, rules = []}) {
 export const damageRuleKey = (rule, side = rule.side) =>
   JSON.stringify([side, rule.selector, rule.type ?? "add", String(rule.formula ?? rule.value), rule.label ?? ""]);
 
+const damageDefenses = Object.values(DEFENSES);
+const damageDefenseOrder = {weakness: 1, resistance: 2, immunity: 3};
+
 export function* matchingDamageRules({context = {}, attackerRules = [], defenderRules = [], skipRolled = true}) {
   const rolled = [...(skipRolled ? context.damageRulesInRoll ?? [] : [])];
   const defaults = {multiply: 10, add: 20, subtract: 20, downgrade: 30, upgrade: 40, override: 50};
   const rules = [...attackerRules.map(r => ({...r, side: "attacker"})), ...defenderRules.map(r => ({...r, side: "defender"}))]
     .sort((a, b) => (a.side === b.side ? 0 : a.side === "attacker" ? -1 : 1)
+      || (damageDefenseOrder[a.selector] ?? 0) - (damageDefenseOrder[b.selector] ?? 0)
       || (a.priority ?? defaults[a.type] ?? 20) - (b.priority ?? defaults[b.type] ?? 20));
   for (const rule of rules) {
     const incomingAP = rule.side === "defender" && rule.selector === "target-roll:ap";
@@ -133,7 +138,9 @@ export function* matchingDamageRules({context = {}, attackerRules = [], defender
     if (rule.side === "defender" && rule.selector === "target-roll:ap") rule.selector = "ap";
     if (rule.side === "defender" && rule.selector === "ap" && !incomingAP) continue;
     if (rule.side === "attacker" && !["outgoing-damage", "ap"].includes(rule.selector)) continue;
-    if (rule.side === "defender" && !["incoming-damage", "toughness", "armor", "ap"].includes(rule.selector)) continue;
+    const defense = damageDefenses.find(defense => defense.selector === rule.selector);
+    if (rule.side === "defender" && !defense && !["incoming-damage", "toughness", "armor", "ap"].includes(rule.selector)) continue;
+    if (defense && (rule.type !== defense.type || !Number.isFinite(Number(rule.value)) || Number(rule.value) < 0)) continue;
     if (!testPredicate(rule.predicate ?? emptyPredicate(), {...context, actor: rule.ownerFlags ?? []})) continue;
     const applied = rolled.indexOf(damageRuleKey(rule));
     if (applied < 0) yield rule;
@@ -145,11 +152,14 @@ export function resolveDamage({damage, ap = 0, toughness, armor = 0, skipUnrolle
   const values = {damage: Number(damage), ap: Number(ap), toughness: Number(toughness), armor: Number(armor)};
   if (!Object.values(values).every(Number.isFinite)) throw new Error("Damage and defenses must be finite numbers.");
   const applied = [];
+  let immunity;
   for (const rule of matchingDamageRules(rules)) {
-    const key = rule.selector.endsWith("-damage") ? "damage" : rule.selector;
+    const defense = Object.hasOwn(damageDefenseOrder, rule.selector);
+    const key = defense || rule.selector.endsWith("-damage") ? "damage" : rule.selector;
     if (!(key in values) || (skipUnrolled && key === "damage" && !Number.isFinite(Number(rule.value)))) continue;
     const before = values[key];
-    values[key] = numericChange(before, rule.type ?? "add", rule.value);
+    values[key] = rule.selector === "immunity" ? 0 : numericChange(before, rule.type ?? "add", rule.value);
+    if (rule.selector === "immunity") immunity ??= rule.label || "Immunity";
     if (!Number.isFinite(values[key])) throw new Error("A conditional rule produced a non-finite result.");
     if (key === "armor") values.armor = Math.max(0, values.armor);
     // Armor is part of total Toughness, so conditional armor changes both values.
@@ -164,7 +174,7 @@ export function resolveDamage({damage, ap = 0, toughness, armor = 0, skipUnrolle
   values.armor = Math.max(0, values.armor);
   values.ap = Math.max(0, values.ap);
   values.effectiveToughness = values.toughness - Math.min(values.ap, values.armor);
-  return {...values, applied};
+  return {...values, applied, ...(immunity ? {immune: true, immunity} : {})};
 }
 
 export function resolveTrait({context, attackerRules = [], defenderRules = []}) {

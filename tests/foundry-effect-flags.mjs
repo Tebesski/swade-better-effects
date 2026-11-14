@@ -57,7 +57,7 @@ try {
   assert.equal(await app.locator(".turns label").textContent(), "Duration");
   await app.locator('[name="duration.value"]').fill("1"); await app.getByLabel("Duration unit", {exact: true}).selectOption("minutes");
   await app.locator('[name="duration.expiry"]').selectOption("turnStart");
-  await app.locator('[data-category="other"] > summary').click(); await app.getByRole("button", {name: "Add flag rule", exact: true}).click();
+  await app.locator('[data-category="better"] > summary').click(); await app.getByRole("button", {name: "Flag rule", exact: true}).click();
   assert.deepEqual(await app.locator(".sbe-change select.type option").allTextContents(), ["Add", "Suppress"]);
   await app.locator(".sbe-change select.type").selectOption("subtract");
   await app.getByLabel("Flag name", {exact: true}).fill("Fatigue"); await app.getByLabel("Flag name", {exact: true}).press("Tab");

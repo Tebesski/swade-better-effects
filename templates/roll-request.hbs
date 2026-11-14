@@ -4,6 +4,10 @@
   <div class="form-group"><label for="{{id}}-trait">Trait</label><div class="form-fields sbe-request-trait"><input id="{{id}}-trait" type="text" name="trait" value="{{values.trait}}" list="{{id}}-traits" placeholder="Trait name" required>{{#if picker}}<button type="button" data-action="pickTrait"><i class="fa-solid fa-list" inert></i> Choose trait</button>{{/if}}</div></div>
   <datalist id="{{id}}-traits">{{#each attributes}}<option value="{{name}}"></option>{{/each}}<option value="Untrained"></option><option value="{{untrained}}"></option></datalist>
   <div class="form-group"><label for="{{id}}-tn">TN</label><div class="form-fields"><input id="{{id}}-tn" {{#if configuring}}type="text" placeholder="4 or @spirit/2"{{else}}type="number" step="any"{{/if}} name="tn" value="{{values.tn}}" required>{{#if hasTargetNumberPreview}}<output class="sbe-request-tn-preview" hidden></output>{{/if}}</div></div>
+  <div class="form-group">
+    <label for="{{id}}-penalty">Penalty</label>
+    <div class="form-fields"><input id="{{id}}-penalty" type="number" step="1" name="penalty" value="{{values.penalty}}" placeholder="0"></div>
+  </div>
   <div class="form-group"><label for="{{id}}-flags">Flags</label><div class="form-fields"><input id="{{id}}-flags" type="text" name="flags" value="{{values.flags}}" list="{{id}}-flags-list" placeholder="fire, grapple"></div></div>
   <datalist class="sbe-request-flags" id="{{id}}-flags-list"></datalist>
   {{#if players}}<fieldset class="sbe-request-recipients"><legend>Players</legend>{{#each players}}<label><input type="checkbox" name="recipient" value="{{id}}" {{#if selected}}checked{{/if}}> <span>{{name}}</span></label>{{/each}}</fieldset>{{/if}}

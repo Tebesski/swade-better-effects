@@ -162,9 +162,10 @@ export function registerRollHooks() {
     if (options.sbeRequest) { context.request = structuredClone(options.sbeRequest); roll.targetNumber = options.sbeRequest.targetNumber; }
     const opponent = context.opposition;
     const originalActor = opponent?.actorUuid ? foundry.utils.fromUuidSync(opponent.actorUuid) : null;
-    const target = opponent ? (opponent.tokenUuid ? foundry.utils.fromUuidSync(opponent.tokenUuid) : null)
+    const target = options.sbeRequest?.lingering ? null : opponent ? (opponent.tokenUuid ? foundry.utils.fromUuidSync(opponent.tokenUuid) : null)
       ?? (originalActor ? {actor: originalActor, document: originalActor, uuid: originalActor.uuid} : null) : game.user.targets.first()?.document;
     if (opponent) roll.targetNumber = opponent.targetNumber;
+    if (options.sbeRequest?.lingering) context.targetUuids = [];
     const result = traitAdjustment(context, target);
     modifiers.push(...result.applied);
     context.traitApplied = result.value;
@@ -187,6 +188,13 @@ export function registerRollHooks() {
       if (opposition.whisper?.length) message.updateSource({whisper: opposition.whisper, blind: !!opposition.blind});
     }
     if (context.request?.whisper?.length) message.updateSource({whisper: context.request.whisper, blind: false});
+    if (context.request?.lingering) {
+      message.updateSource({whisper: [], blind: false, style: CONST.CHAT_MESSAGE_STYLES.OTHER});
+    }
+    if (context.request?.lingering || context.lingeringDamage) {
+      const targets = (context.targetUuids ?? []).map(uuid => foundry.utils.fromUuidSync(uuid)).filter(Boolean);
+      message.updateSource({"flags.swade.targets": targets.map(token => ({uuid: token.uuid, name: token.name}))});
+    }
     snapshotRollNotes(context, message);
     message.updateSource({[`flags.${MODULE_ID}.context`]: context});
   });

@@ -63,6 +63,18 @@ test("the defender's outgoing AP does not pierce its own armor; incoming AP rule
 test("outgoing bonuses resolve before incoming resistance", () => {
   assert.equal(resolve({attackerRules: [rule("outgoing-damage", 4)], defenderRules: [rule("incoming-damage", .5, emptyPredicate(), "multiply")]}).damage, 8);
 });
+test("weakness, resistance and immunity apply to incoming damage when their flags match", () => {
+  const defenderRules = [rule("weakness", 5, flag("holy")), rule("resistance", 3, flag("fire"), "subtract"),
+    rule("immunity", 0, flag("poison"), "override", {label: "Poison immunity"})];
+  const against = roll => resolve({defenderRules, context: {hasRoll: true, roll}});
+  assert.equal(against(["physical"]).damage, 12);
+  assert.equal(against(["holy", "fire"]).damage, 14);
+  const immune = against(["holy", "fire", "poison"]);
+  assert.equal(immune.damage, 0);
+  assert.equal(immune.immunity, "Poison immunity");
+  assert.deepEqual(calculateWounds({...immune, effectiveToughness: 0}), {wounds: 0, status: "none"});
+  assert.equal(resolve({attackerRules: defenderRules, context: {hasRoll: true, roll: ["holy", "poison"]}}).damage, 12);
+});
 test("armor penalties cannot remove non-armor Toughness", () => {
   const result = resolve({defenderRules: [rule("armor", -10)]});
   assert.equal(result.armor, 0); assert.equal(result.toughness, 4);

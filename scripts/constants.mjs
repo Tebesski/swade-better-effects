@@ -1,5 +1,11 @@
 export const MODULE_ID = "swade-better-effects";
 export const MAP_KEY = "sbe.map";
+export const ADD_ITEM_KEY = "sbe.addItem";
+export const DEFENSES = {
+  "sbe.weakness": {selector: "weakness", label: "Weakness", type: "add"},
+  "sbe.resistance": {selector: "resistance", label: "Resistance", type: "subtract"},
+  "sbe.immunity": {selector: "immunity", label: "Immunity", type: "override"}
+};
 export const EFFECT_TYPE = `${MODULE_ID}.effect`;
 export const ICON = "systems/swade/assets/icons/active-effect.svg";
 export const TEMPLATE = `modules/${MODULE_ID}/templates`;

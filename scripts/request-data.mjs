@@ -2,25 +2,30 @@ import {normalizeFlags} from "./rules.mjs";
 
 export const traitName = value => String(value ?? "").normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase();
 
-export function traitRequest({trait, tn = 4, flags = [], kind, attribute}, attributes, untrainedNames = []) {
+export function traitRequest({trait, tn = 4, penalty = 0, flags = [], kind, attribute}, attributes, untrainedNames = []) {
   const name = String(trait ?? "").trim();
   if (!name) throw new Error("Enter a skill, attribute, or Untrained.");
   const targetNumber = tn === "" ? 4 : Number(tn);
   if (!Number.isFinite(targetNumber)) throw new Error("TN must be a finite number.");
+  const penaltyValue = Number(penalty);
+  if (!Number.isSafeInteger(penaltyValue)) throw new Error("Penalty must be a whole number.");
+  const terms = {targetNumber, flags: normalizeFlags(flags)};
+  if (penaltyValue) terms.penalty = -Math.abs(penaltyValue);
   const match = attributes.find(entry => [entry.key, entry.name].some(label => traitName(label) === traitName(name)));
   if (kind === "attribute" || !kind && match) {
     if (!match) throw new Error("Choose a valid attribute.");
-    return {version: 1, kind: "attribute", trait: match.key, name: match.name, targetNumber, flags: normalizeFlags(flags)};
+    return {version: 1, kind: "attribute", trait: match.key, name: match.name, ...terms};
   }
   const untrained = kind === "untrained" || !kind && ["untrained", "unskilled", ...untrainedNames].some(label => traitName(label) === traitName(name));
   return {version: 1, kind: untrained ? "untrained" : "skill", trait: name, name,
-    attribute: attributes.some(entry => entry.key === attribute) ? attribute : "agility", targetNumber, flags: normalizeFlags(flags)};
+    attribute: attributes.some(entry => entry.key === attribute) ? attribute : "agility", ...terms};
 }
 
 export function validateRequest(request) {
   return request?.version === 1 && ["attribute", "skill", "untrained"].includes(request.kind)
     && typeof request.trait === "string" && !!request.trait.trim() && typeof request.name === "string" && !!request.name.trim()
     && Number.isFinite(request.targetNumber) && Array.isArray(request.flags) && request.flags.every(flag => typeof flag === "string")
+    && (request.penalty === undefined || Number.isSafeInteger(request.penalty) && request.penalty <= 0)
     && (request.recipients === undefined || Array.isArray(request.recipients) && request.recipients.every(id => typeof id === "string"));
 }
 

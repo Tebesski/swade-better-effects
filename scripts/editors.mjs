@@ -1,4 +1,4 @@
-import {EFFECT_TYPE, ICON, MAP_KEY, MODULE_ID, OPERATIONS, TEMPLATE} from "./constants.mjs";
+import {ADD_ITEM_KEY, DEFENSES, EFFECT_TYPE, ICON, MAP_KEY, MODULE_ID, OPERATIONS, TEMPLATE} from "./constants.mjs";
 import {changeSignature, conditionFor, emptyPredicate, hasCondition, normalizeFlag, selectorForKey, validatePredicate} from "./rules.mjs";
 import {mountPredicate} from "./predicate-ui.mjs";
 import {changeGroups} from "./change-presets.mjs";
@@ -8,6 +8,8 @@ import {effectiveFlags, flagInputData} from "./default-flags.mjs";
 import {NOTE_PREFIX, noteBaseKey, noteChangeKey, noteSelectorForKey} from "./note-rules.mjs";
 import {cleanRollNote} from "./roll-notes.mjs";
 import {isDamageFormula} from "./damage-formulas.mjs";
+import {isItemEffect, resolveGrantItem} from "./item-effects.mjs";
+import {configureLingering} from "./lingering-config.mjs";
 
 let Wizard;
 const openEditors = new Map();
@@ -16,16 +18,21 @@ const valueText = value => value !== null && typeof value === "object" ? JSON.st
 export function initializeWizard() {
   const Base = game.swade.apps.ActiveEffectWizard;
   Wizard = class BetterEffectWizard extends Base {
-    constructor({document, effect}) {
+    constructor({document, effect, itemEffect}) {
       super({document});
       this.effect = effect;
       this.draft = effect?.toObject() ?? {name: document.name, img: document.img || ICON, type: "base", system: {changes: []}, duration: {value: null, units: "rounds", expiry: null}, transfer: document.documentName === "Item" && document.type !== "power"};
       const data = this.draft.flags?.[MODULE_ID] ?? {};
+      this.itemEffect = document.documentName === "Item" && document.type !== EFFECT_TYPE && (itemEffect || !!data.itemEffect);
+      if (this.itemEffect) {
+        this.draft.duration = {value: null, units: "rounds", expiry: null};
+        this.draft.transfer = true;
+      }
       this.rows = (this.draft.system.changes ?? []).map((change, index) => ({...change,
         ...(change.key.startsWith(NOTE_PREFIX) ? {key: noteBaseKey(change.key) ?? "", type: "note"} : {}), label: change.key,
         predicate: structuredClone(conditionFor(change, index, data.conditions) ?? data.conditions?.[index]?.predicate ?? emptyPredicate())}));
       this.editorKey = effect?.uuid ?? document.uuid;
-      this.presetStates = {attribute: false, skill: false, derived: false, globalMod: false, other: false};
+      this.presetStates = {attribute: false, skill: false, derived: false, globalMod: false, other: false, better: false};
     }
 
     static DEFAULT_OPTIONS = {
@@ -45,6 +52,16 @@ export function initializeWizard() {
         },
         clickIcon: function () { new CONFIG.ux.FilePicker({type: "image", current: this.draft.img, callback: path => { this.capture(); this.draft.img = path; this.render(); }}).render({force: true}); },
         standardEditor: async function () { await this.openStandardEditor(); },
+        lingering: async function () {
+          this.capture();
+          const actor = this.document.documentName === "Actor" ? this.document : this.document.actor;
+          const config = await configureLingering(this.draft.flags?.[MODULE_ID]?.lingering, actor);
+          if (!config) return;
+          this.capture();
+          this.draft.flags ??= {};
+          (this.draft.flags[MODULE_ID] ??= {}).lingering = config;
+          this.render();
+        },
         editNote: async function (_event, target) { await this.editNote(Number(target.closest("[data-index]").dataset.index)); }
       }
     };
@@ -54,7 +71,9 @@ export function initializeWizard() {
     };
 
     _getHeaderControls() {
-      return [...super._getHeaderControls(), {action: "standardEditor", icon: "fa-solid fa-sliders", label: "Standard Active Effect editor", onClick: () => this.openStandardEditor()}];
+      const controls = super._getHeaderControls();
+      if (this.itemEffect) return controls;
+      return [...controls, {action: "standardEditor", icon: "fa-solid fa-sliders", label: "Standard Active Effect editor", onClick: () => this.openStandardEditor()}];
     }
 
     async openStandardEditor() {
@@ -64,12 +83,14 @@ export function initializeWizard() {
     async _prepareContext(options) {
       const context = await super._prepareContext(options);
       if (!this.effect && !this.nativeDefaultsApplied) {
-        this.draft.name = context.effect.name;
-        this.draft.img = context.effect.img;
+        if (!this.itemEffect) {
+          this.draft.name = context.effect.name;
+          this.draft.img = context.effect.img;
+        }
         this.nativeDefaultsApplied = true;
       }
-      const labels = new Map([...context.derivedPresets, ...context.globalModPresets, ...context.otherPresets, {key: MODIFY_FLAG_KEY, label: "Modify flag"}, {key: MAP_KEY, label: "Modify MAP"}].map(p => [p.key, p.label]));
       this.changeGroups = changeGroups(context);
+      const labels = new Map([...context.derivedPresets, ...this.changeGroups.all.flatMap(group => group.options)].map(p => [p.key, p.label]));
       const changeLabel = row => {
         if (labels.has(row.key)) return labels.get(row.key);
         const attribute = row.key.match(/^system\.attributes\.([^.]+)\.(.+)$/);
@@ -86,7 +107,8 @@ export function initializeWizard() {
         globalModPresets: this.changeGroups.global.map(g => ({key: g.options[0].key, label: g.label})),
         otherPresets: this.changeGroups.other.map(g => ({key: g.options[0].key, label: g.label})),
         collapsibleStates: {...context.collapsibleStates, ...this.presetStates},
-        buttons: this.effect ? [{...context.buttons[0], icon: "fa-solid fa-save", label: "Save Effect"}] : context.buttons};
+        buttons: this.effect ? [{...context.buttons[0], icon: "fa-solid fa-save", label: "Save Effect"}]
+          : this.itemEffect ? [{...context.buttons[0], label: "Add Effect"}] : context.buttons};
     }
 
     _onChangeForm(_config, event) {
@@ -128,6 +150,7 @@ export function initializeWizard() {
     async _onRender(context, options) {
       await super._onRender(context, options);
       const basics = this.element.querySelector(".effect-basics");
+      basics.classList.toggle("sbe-passive-basics", this.itemEffect);
       basics.querySelector(".sbe-effect-flags")?.remove();
       const group = document.createElement("div"); group.className = "form-group sbe-effect-flags";
       const label = document.createElement("label"); label.textContent = "Flags";
@@ -148,22 +171,50 @@ export function initializeWizard() {
       flagsInput.addEventListener("change", () => { this.capture(); refreshFlags(); });
       basics.querySelector('[name="name"]').addEventListener("input", () => { this.capture(); refreshFlags(); });
       fields.append(flagsInput, list); group.append(label, fields); basics.querySelector(".name").after(group);
-      const durationInput = basics.querySelector('[name="duration.rounds"], [name="duration.value"]');
-      durationInput.name = "duration.value"; durationInput.value = this.draft.duration.value ?? ""; durationInput.min = "0"; durationInput.step = "1";
-      basics.querySelector(".turns label").textContent = "Duration";
-      basics.querySelector('[name="duration.units"]')?.remove();
-      const units = document.createElement("select"); units.name = "duration.units"; units.setAttribute("aria-label", "Duration unit");
-      const durationUnits = {rounds: "Rounds", minutes: "Minutes", hours: "Hours"};
-      const currentUnit = this.draft.duration.units ?? "rounds";
-      if (!(currentUnit in durationUnits)) durationUnits[currentUnit] = game.i18n.localize(`EFFECT.DURATION.UNITS.${currentUnit}`);
-      for (const [unit, text] of Object.entries(durationUnits)) units.append(new Option(text, unit, false, unit === currentUnit));
-      durationInput.after(units);
+      if (this.itemEffect) {
+        basics.querySelector(".turns")?.remove();
+        basics.querySelector(".behavior")?.remove();
+      } else {
+        const durationInput = basics.querySelector('[name="duration.rounds"], [name="duration.value"]');
+        durationInput.name = "duration.value"; durationInput.value = this.draft.duration.value ?? ""; durationInput.min = "0"; durationInput.step = "1";
+        basics.querySelector(".turns label").textContent = "Duration";
+        basics.querySelector('[name="duration.units"]')?.remove();
+        const units = document.createElement("select"); units.name = "duration.units"; units.setAttribute("aria-label", "Duration unit");
+        const durationUnits = {rounds: "Rounds", minutes: "Minutes", hours: "Hours"};
+        const currentUnit = this.draft.duration.units ?? "rounds";
+        if (!(currentUnit in durationUnits)) durationUnits[currentUnit] = game.i18n.localize(`EFFECT.DURATION.UNITS.${currentUnit}`);
+        for (const [unit, text] of Object.entries(durationUnits)) units.append(new Option(text, unit, false, unit === currentUnit));
+        durationInput.after(units);
+      }
+      basics.querySelector(".sbe-lingering-button")?.remove();
+      const lingering = document.createElement("button");
+      lingering.type = "button";
+      lingering.className = "sbe-lingering-button";
+      lingering.dataset.action = "lingering";
+      const enabled = !!this.draft.flags?.[MODULE_ID]?.lingering?.enabled;
+      lingering.textContent = enabled ? "Lingering ✓" : "Lingering";
+      basics.append(lingering);
+      const presets = this.element.querySelector(".presets");
+      if (!presets.querySelector('[data-category="better"]')) {
+        const details = document.createElement("details");
+        details.dataset.category = "better";
+        details.open = this.presetStates.better;
+        const heading = document.createElement("summary"); heading.textContent = "Better Effects";
+        const list = document.createElement("ul"); list.className = "unmarked-list other-presets";
+        for (const group of this.changeGroups.better) {
+          const entry = document.createElement("li");
+          const button = document.createElement("button"); button.type = "button";
+          button.dataset.action = "addChange"; button.dataset.key = group.options[0].key; button.textContent = group.label;
+          entry.append(button); list.append(entry);
+        }
+        details.append(heading, list); presets.append(details);
+      }
       // Native A.E.G.I.S. installs animated click handlers on summary elements.
       // Replace only those summaries, keeping the same details and native markup.
       this.element.querySelectorAll(".presets details").forEach(details => {
         const previous = details.querySelector(":scope > summary");
         previous.replaceWith(previous.cloneNode(true));
-        details.addEventListener("toggle", () => { this.presetStates[details.dataset.category] = details.open; });
+        details.addEventListener("toggle", () => { if (!this.changeQuery?.trim()) this.presetStates[details.dataset.category] = details.open; });
       });
       this.element.querySelectorAll('input[type="checkbox"], select[name="duration.expiry"]').forEach((input, index) => {
         input.id = `${this.id}-option-${index}`;
@@ -173,12 +224,12 @@ export function initializeWizard() {
       for (const button of this.element.querySelectorAll('.button-list button:nth-child(3)')) {
         const siblings = [...button.parentElement.querySelectorAll("button")];
         // The same three native component choices move into the preview dropdown.
-        if (siblings.length === 3) { siblings[0].textContent = "Add"; siblings.slice(1).forEach(b => b.remove()); }
+        if (siblings.length === 3) {
+          siblings[0].textContent = game.i18n.localize(button.closest("details").dataset.category === "skill" ? "SWADE.Skill" : "SWADE.Attribute");
+          siblings.slice(1).forEach(b => b.remove());
+        }
       }
-      for (const button of this.element.querySelectorAll('.other-presets [data-action="addChange"]')) {
-        const names = {[MODIFY_FLAG_KEY]: "Add flag rule", [MAP_KEY]: "Add MAP modifier", "sbe.targetRoll.trait": "Add targeting modifier"};
-        button.textContent = names[button.dataset.key] ?? `Add ${button.textContent.trim()}`;
-      }
+      this.mountChangeSearch(presets, context);
       const preview = this.element.querySelector(".preview");
       preview.querySelectorAll(".changes-list > li[data-index]").forEach(row => {
         if (row.classList.contains("sbe-change")) return;
@@ -188,6 +239,19 @@ export function initializeWizard() {
         const value = row.querySelector("input.value");
         value.dataset.field = "value";
         value.setAttribute("aria-label", "Change value");
+        const defense = Object.hasOwn(DEFENSES, draft.key) ? DEFENSES[draft.key] : null;
+        if (defense || draft.key === ADD_ITEM_KEY) {
+          const type = row.querySelector("select.type");
+          type.replaceChildren(new Option(defense ? {add: "+ Damage", subtract: "− Damage", override: "No damage"}[defense.type] : "Grant", defense?.type ?? "add"));
+          type.hidden = true;
+          row.classList.add("sbe-special-change");
+          if (draft.key === ADD_ITEM_KEY) this.mountItemReference(row, value);
+          else if (defense.selector === "immunity") value.type = "hidden";
+          else {
+            value.type = "number"; value.min = "0"; value.step = "any"; value.placeholder = "Damage";
+            value.setAttribute("aria-label", `${defense.label} amount`);
+          }
+        }
         if (noteSelectorForKey(draft.key)) {
           const type = row.querySelector("select.type");
           type.append(new Option("Note", "note")); type.value = draft.type;
@@ -260,6 +324,7 @@ export function initializeWizard() {
           link.before(generate);
           return;
         }
+        if (draft.key === ADD_ITEM_KEY) return;
         const details = document.createElement("details"); details.className = "sbe-condition-details"; details.open = draft.conditionsOpen ?? false;
         const summary = document.createElement("summary"); summary.textContent = "Conditions";
         const container = document.createElement("div"); container.className = "sbe-condition";
@@ -267,6 +332,85 @@ export function initializeWizard() {
         mountPredicate(container, draft.predicate);
       });
       preview.classList.toggle("sbe-attribute-notes-only", !!this.rows.length && this.rows.every(row => row.type === "note" && row.key.startsWith("system.attributes.")));
+    }
+
+    mountChangeSearch(presets, context) {
+      presets.querySelector(".sbe-change-search")?.remove();
+      presets.querySelector(".sbe-no-presets")?.remove();
+      const search = document.createElement("input");
+      search.type = "search";
+      search.className = "sbe-change-search";
+      search.setAttribute("aria-label", "Search changes");
+      search.placeholder = "Search changes…";
+      search.value = this.changeQuery ?? "";
+      const empty = document.createElement("p");
+      empty.className = "sbe-no-presets";
+      empty.textContent = "No matching changes.";
+      presets.prepend(search);
+      presets.append(empty);
+      const categories = [...presets.querySelectorAll("details[data-category]")];
+      const filter = () => {
+        this.changeQuery = search.value;
+        const terms = search.value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
+        let found = false;
+        for (const category of categories) {
+          const heading = category.querySelector("summary").textContent;
+          let visible = false;
+          for (const button of category.querySelectorAll('[data-action="addChange"]')) {
+            const group = this.changeGroups.all.find(group => group.options[0].key === button.dataset.key);
+            const extras = category.dataset.category === "attribute"
+              ? [...Object.values(context.attributes).map(key => game.i18n.localize(key)), "die sides wild die modifier"]
+              : category.dataset.category === "skill" ? ["die sides wild die modifier"] : [];
+            const value = [heading, button.textContent, button.dataset.key, ...(group?.options.map(option => option.label) ?? []), ...extras]
+              .join(" ").toLocaleLowerCase();
+            const matches = terms.every(term => value.includes(term));
+            (button.closest("li") ?? button).hidden = !matches;
+            visible ||= matches;
+          }
+          category.hidden = !visible;
+          category.open = terms.length ? visible : !!this.presetStates[category.dataset.category];
+          found ||= visible;
+        }
+        empty.hidden = found;
+      };
+      search.addEventListener("input", filter);
+      search.addEventListener("keydown", event => { if (event.key === "Enter") event.preventDefault(); });
+      filter();
+    }
+
+    mountItemReference(row, input) {
+      input.classList.remove("value");
+      input.placeholder = "Drop an item or enter its UUID";
+      input.setAttribute("aria-label", "Item UUID");
+      const field = document.createElement("div"); field.className = "sbe-item-reference";
+      const link = document.createElement("a"); link.role = "button"; link.tabIndex = 0; link.hidden = true;
+      input.replaceWith(field);
+      field.append(input, link);
+      const refresh = async () => {
+        const uuid = input.value.trim();
+        const item = uuid ? await resolveGrantItem(uuid) : null;
+        if (!field.isConnected || uuid !== input.value.trim()) return;
+        link.hidden = !item;
+        if (!item) return;
+        const icon = document.createElement("img"); icon.src = item.img; icon.alt = "";
+        link.replaceChildren(icon, document.createTextNode(item.name));
+        link.onclick = event => { event.preventDefault(); item.sheet?.render({force: true}); };
+      };
+      link.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); link.click(); }
+      });
+      input.addEventListener("change", refresh);
+      field.addEventListener("dragover", event => event.preventDefault());
+      field.addEventListener("drop", async event => {
+        event.preventDefault(); event.stopPropagation();
+        const data = foundry.applications.ux.TextEditor.implementation.getDragEventData(event);
+        const item = data?.type === "Item" ? await resolveGrantItem(data.uuid) : null;
+        if (!item) return ui.notifications.warn("Drop an accessible item from the Items tab or a compendium.");
+        input.value = item.uuid;
+        this.capture();
+        await refresh();
+      });
+      void refresh();
     }
 
     addPreset(target) {
@@ -279,7 +423,8 @@ export function initializeWizard() {
         if (!selected?.trim()) return ui.notifications.warn("Enter a skill name first.");
         key = `@Skill{${selected.trim()}}[system.${key}]`; label = `${selected} ${label}`;
       } else if (category === "attribute") { key = `system.attributes.${selected}.${key}`; label = `${selected} ${label}`; }
-      this.rows.push({key, label, type: "add", value: "", phase: "initial", priority: null, predicate: emptyPredicate()});
+      const defense = Object.hasOwn(DEFENSES, key) ? DEFENSES[key] : null;
+      this.rows.push({key, label, type: defense?.type ?? "add", value: defense?.selector === "immunity" ? "0" : "", phase: "initial", priority: null, predicate: emptyPredicate()});
       this.render();
     }
 
@@ -304,12 +449,27 @@ export function initializeWizard() {
       if (this.draft.duration.value !== null && (!Number.isInteger(this.draft.duration.value) || this.draft.duration.value < 0)) throw new Error("Duration must be a non-negative whole number or left blank.");
       for (const row of this.rows) {
         if (!row.key?.trim()) throw new Error("Each change needs a data path.");
+        if (row.key === ADD_ITEM_KEY) {
+          const item = await resolveGrantItem(row.value);
+          if (!item) throw new Error("Enter a valid Item UUID or drop an accessible item onto Add Item.");
+          if (item.uuid === this.document.uuid) throw new Error("An item cannot grant itself.");
+          row.value = item.uuid; row.type = "add"; row.predicate = emptyPredicate();
+        }
         if (row.key === MODIFY_FLAG_KEY) {
           row.value = normalizeFlag(row.value);
           if (!row.value || !["add", "subtract"].includes(row.type)) throw new Error("Choose Add or Suppress and enter a flag name.");
           row.predicate = emptyPredicate();
         }
         if (!validatePredicate(row.predicate)) throw new Error("Complete every condition: choose a flag or remove the empty condition.");
+        if (Object.hasOwn(DEFENSES, row.key)) {
+          const defense = DEFENSES[row.key];
+          if (defense.selector === "immunity") row.value = "0";
+          else if (!String(row.value ?? "").trim() || !Number.isFinite(Number(row.value)) || Number(row.value) < 0) {
+            throw new Error(`Enter a non-negative damage amount for ${defense.label}.`);
+          }
+          row.type = defense.type;
+          continue;
+        }
         if (row.type === "note") {
           if (!noteSelectorForKey(row.key)) throw new Error("Choose a roll change for this note.");
           row.value = cleanRollNote(row.value);
@@ -330,7 +490,9 @@ export function initializeWizard() {
         phase: change.phase ?? "initial", priority: change.priority ?? null}));
       const conditions = changes.map((change, index) => ({signature: changeSignature(change), predicate: this.rows[index].predicate}));
       const flags = {...this.draft.flags, [MODULE_ID]: {...this.draft.flags?.[MODULE_ID], nameFlag: normalizeFlag(this.draft.name), conditions}};
-      const data = {name: this.draft.name, img: this.draft.img, duration: this.draft.duration, system: {...this.draft.system, changes}, flags};
+      if (this.itemEffect) flags[MODULE_ID].itemEffect = true;
+      const data = {name: this.draft.name, img: this.draft.img, duration: this.draft.duration, system: {...this.draft.system, changes}, flags,
+        ...(this.itemEffect ? {transfer: true} : {})};
       if (this.effect) await this.effect.update(data);
       else {
         const [created] = await this.document.createEmbeddedDocuments("ActiveEffect", [{...data, type: this.draft.type, transfer: this.draft.transfer, start: null}]);
@@ -346,12 +508,12 @@ export function initializeWizard() {
   return Wizard;
 }
 
-export function openAegis(document, effect) {
+export function openAegis(document, effect, {itemEffect = false} = {}) {
   if (!document?.isOwner || effect && !effect.isOwner) return ui.notifications.warn("You need ownership to edit this effect.");
   const key = effect?.uuid ?? document.uuid;
   const existing = openEditors.get(key);
   if (existing) { existing.render({force: true}); existing.bringToFront(); return existing; }
-  const app = new Wizard({document, effect}); openEditors.set(key, app); app.render({force: true}); return app;
+  const app = new Wizard({document, effect, itemEffect}); openEditors.set(key, app); app.render({force: true}); return app;
 }
 
 export async function editEffectSource(source, name) {
@@ -375,6 +537,7 @@ export async function editEffectSource(source, name) {
 }
 
 export async function chooseEditor(effect) {
+  if (isItemEffect(effect) && effect.isOwner) return openAegis(effect.parent, effect);
   if (!effect?.isOwner) return effect?.sheet.render({force: true});
   return foundry.applications.api.DialogV2.wait({classes: ["sbe-app"], window: {title: `Edit Effect: ${effect.name}`, icon: "fa-solid fa-person-rays"}, buttons: [
     {action: "aegis", label: "Effect builder", icon: "fa-solid fa-shield-quartered", callback: () => openAegis(effect.parent, effect)},
@@ -382,15 +545,47 @@ export async function chooseEditor(effect) {
   ], rejectClose: false});
 }
 
+export function initialTemplateEffect(item, img = item.img) {
+  return {name: item.name, img, type: "base", transfer: false, system: {changes: []},
+    flags: {[MODULE_ID]: {nameFlag: normalizeFlag(item.name)}}};
+}
+
 export class EffectItemSheet extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.DocumentSheetV2) {
-  static DEFAULT_OPTIONS = {classes: ["sbe-app", "sbe-effect-chooser"], position: {width: 360}, window: {icon: "fa-solid fa-person-rays"},
+  static DEFAULT_OPTIONS = {classes: ["sbe-app", "sbe-effect-chooser"], position: {width: 560}, window: {icon: "fa-solid fa-person-rays", resizable: true},
     actions: {
       aegis: async function () { await this.editEffect("aegis"); },
       standard: async function () { await this.editEffect("standard"); }
     }};
   static PARTS = {form: {template: `${TEMPLATE}/effect-item.hbs`}};
   async _prepareContext(options) {
-    return {...await super._prepareContext(options), item: this.document, editable: this.document.isOwner};
+    const effects = this.document.effects.contents;
+    const descriptions = await Promise.all(effects.map(async effect => ({
+      id: effect.id,
+      name: effect.name,
+      uuid: effect.uuid,
+      value: effect.description,
+      html: await foundry.applications.ux.TextEditor.implementation.enrichHTML(effect.description ?? "", {
+        relativeTo: effect, secrets: effect.isOwner
+      }),
+      editable: this.isEditable && effect.isOwner
+    })));
+    return {...await super._prepareContext(options), item: this.document, editable: this.isEditable,
+      descriptions, multiple: effects.length > 1};
+  }
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    for (const editor of this.element.querySelectorAll("prose-mirror[data-effect-id]")) {
+      editor.addEventListener("change", async () => {
+        const effect = this.document.effects.get(editor.dataset.effectId);
+        if (!this.isEditable || !effect?.isOwner || editor.value === effect.description) return;
+        try {
+          await effect.update({description: editor.value});
+          if (this.rendered) await this.render();
+        } catch (error) {
+          ui.notifications.error(error.message, {console: true});
+        }
+      });
+    }
   }
   async editEffect(editor) {
     if (editor === "aegis" && !this.document.isOwner) return;
@@ -414,7 +609,17 @@ export class EffectItemSheet extends foundry.applications.api.HandlebarsApplicat
     return effect?.sheet.render({force: true});
   }
   async render(options, ...args) {
-    if (!this.document.effects.size && this.isEditable) return openAegis(this.document);
+    const creating = (typeof options === "object" ? options : args[0])?.renderContext === "createItem";
+    if (this.isEditable && !this.document.effects.size) {
+      // Repair templates made before Create Item initialized the embedded effect.
+      this.initializing ??= this.document.createEmbeddedDocuments("ActiveEffect", [initialTemplateEffect(this.document)])
+        .finally(() => { this.initializing = null; });
+      await this.initializing;
+    }
+    const [effect] = this.document.effects.contents;
+    if (creating && this.isEditable && this.document.effects.size === 1 && !effect.system.changes.length) {
+      return openAegis(this.document, effect);
+    }
     return super.render(options, ...args);
   }
 }
@@ -423,14 +628,51 @@ export function injectEditorButtons(app, html) {
   const doc = app.document;
   if (!doc) return;
   if (["Actor", "Item"].includes(doc.documentName)) {
+    if (doc.documentName === "Item" && doc.type !== EFFECT_TYPE) {
+      // Skills use an untabbed template in SWADE. Give them the same controls
+      // by rendering the native item Effects partial in their content column.
+      if (doc.type === "skill" && !html.querySelector('section[data-tab="effects"]')) {
+        const sheetContent = html.querySelector(".main-grid > .sheet-content");
+        if (sheetContent) {
+          const details = document.createElement("details"); details.className = "sbe-skill-effects";
+          const summary = document.createElement("summary"); summary.textContent = game.i18n.localize("SWADE.Effects");
+          details.append(summary); sheetContent.append(details);
+          void foundry.applications.handlebars.renderTemplate("systems/swade/templates/item/partials/tabs/effects.hbs", {
+            item: doc, tabs: {effects: {id: "effects", group: "main", tabCssClass: "effects"}}, collapsibleStates: app.collapsibleStates
+          }).then(markup => {
+            if (!details.isConnected) return;
+            details.insertAdjacentHTML("beforeend", markup);
+            injectEditorButtons(app, html);
+          }).catch(error => console.error(`${MODULE_ID} | Skill effects`, error));
+        }
+      }
+      for (const button of html.querySelectorAll('[data-tab="effects"] button.add-effect')) {
+        if (!doc.isOwner || !app.isEditable) continue;
+        button.type = "button";
+        button.replaceChildren(Object.assign(document.createElement("i"), {className: "fa-solid fa-plus"}), "Add Effect");
+      }
+    }
+    if (doc.documentName === "Actor") {
+      for (const row of html.querySelectorAll("[data-effect-id][data-parent-id]")) {
+        if (isItemEffect(doc.items.get(row.dataset.parentId)?.effects.get(row.dataset.effectId))) row.remove();
+      }
+    }
+    if (html.dataset.sbeEffectEditor) return;
+    html.dataset.sbeEffectEditor = "true";
     html.addEventListener("click", event => {
+      if (doc.documentName === "Item" && doc.type !== EFFECT_TYPE && doc.isOwner && app.isEditable &&
+        event.target.closest('[data-tab="effects"] button.add-effect')) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        openAegis(doc, undefined, {itemEffect: true});
+        return;
+      }
       const button = event.target.closest('[data-action="openEffect"], [data-action="editEffect"], .effect-edit');
       const row = button?.closest("[data-effect-uuid], [data-effect-id]");
       if (!row) return;
       const {effectUuid, effectId, parentId} = row.dataset;
       // The actor's Effects tab also lists effects owned by its embedded items.
       const parent = parentId && parentId !== doc.id ? doc.items?.get(parentId) : doc;
-      const effect = effectUuid ? foundry.utils.fromUuid(effectUuid) : parent?.effects.get(effectId);
+      const effect = parent?.effects.get(effectId) ?? (effectUuid ? foundry.utils.fromUuid(effectUuid) : undefined);
       if (!effect) return;
       event.preventDefault(); event.stopImmediatePropagation();
       Promise.resolve(effect).then(chooseEditor).catch(error => ui.notifications.error(error.message));

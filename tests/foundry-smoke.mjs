@@ -66,6 +66,15 @@ try {
   await dialog.locator('[name="name"]').fill(`${prefix} Fire Ward`);
   await dialog.locator('button[type="submit"]').click();
   await gm.locator(".sbe-aegis").waitFor();
+  await gm.locator(".sbe-aegis").getByRole("button", {name: "Save Effect", exact: true}).waitFor();
+  await bind(gm);
+  const createdEffectId = await gm.evaluate(() => smoke.template.effects.contents[0].id);
+  await gm.locator('.sbe-aegis button[data-action="close"]').click();
+  await gm.evaluate(() => smoke.template.sheet.render({force: true}));
+  const chooser = gm.locator(".sbe-effect-chooser");
+  await chooser.getByRole("button", {name: "Manual edit", exact: true}).waitFor();
+  await chooser.getByRole("button", {name: "Effect builder", exact: true}).click();
+  await gm.locator(".sbe-aegis").getByRole("button", {name: "Save Effect", exact: true}).waitFor();
   if (!await gm.locator(".sbe-aegis details[data-category=derived]").evaluate(el => el.open)) await gm.locator(".sbe-aegis details[data-category=derived] summary").click();
   await gm.locator('.sbe-aegis [data-key="system.stats.toughness.value"]').click();
   await gm.locator('.sbe-change [data-field="value"]').fill("4");
@@ -80,6 +89,7 @@ try {
   pass("native Create Item dialog, automatic A.E.G.I.S., and condition UI");
 
   const originalId = await gm.evaluate(() => smoke.template.effects.contents[0].id);
+  assert.equal(originalId, createdEffectId);
   await gm.evaluate(async () => {
     await smoke.template.effects.contents[0].update({description: "<p>Preserve me</p>", tint: "#112233"});
     smoke.api.openAegis(smoke.template, smoke.template.effects.contents[0]);

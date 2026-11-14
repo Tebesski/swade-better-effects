@@ -39,7 +39,7 @@ try {
   const wizard=page.locator(".sbe-aegis");await wizard.waitFor();
   await openDetails('.sbe-aegis details[data-category="globalMod"]');
   assert.deepEqual((await wizard.locator('[data-category="globalMod"] button').allTextContents()).map(t=>t.trim()),["Traits","Attack","Gang Up","Damage","All Armor Piercing"]);
-  await wizard.getByRole("button",{name:"Add Traits",exact:true}).click();
+  await wizard.getByRole("button",{name:"Traits",exact:true}).click();
   const row0=wizard.locator(".sbe-change").nth(0);
   assert.equal(await row0.getByLabel("Change",{exact:true}).locator("option").count(),6);
   await row0.getByLabel("Change",{exact:true}).selectOption("system.stats.globalMods.agility");await row0.locator("input.value").fill("1");
@@ -48,7 +48,7 @@ try {
   assert.equal(await row0.getByLabel("Flag",{exact:true}).inputValue(),"sword*");
   await row0.locator('a[data-action="deleteChange"]').click();
   await openDetails('.sbe-aegis details[data-category="other"]');
-  await wizard.getByRole("button",{name:"Add targeting modifier",exact:true}).click();
+  await wizard.getByRole("button",{name:"Modify targeting roll",exact:true}).click();
   const row=wizard.locator(".sbe-change").nth(0);
   await row.getByLabel("Change",{exact:true}).selectOption("sbe.targetRoll.targetAttackRanged");await row.locator("input.value").fill("-2");
   await row.locator(".sbe-condition-details > summary").click();

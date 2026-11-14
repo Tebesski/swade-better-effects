@@ -12,6 +12,11 @@ let TargetedAdapter;
 let targetedInitialization;
 const openDamage = new Map();
 
+export function lingeringDamageRoll(message) {
+  const data = message?.getFlag(MODULE_ID, "lingeringResult")?.damage;
+  return data ? {roll: Roll.fromData(data.roll), context: data.context} : null;
+}
+
 function baseDamage(message) {
   const gmAdjustment = Number.parseInt(message.flags?.["swade-tools"]?.gmmod) || 0;
   return damageRoll(message).total + gmAdjustment;
@@ -27,7 +32,8 @@ export function prepareDamage(actor, token, message, {damage, ap, toughness, arm
   const tiny = tinyMelee(rules.context);
   if (tiny) resolved.damage = Math.min(resolved.damage, 1);
   const blocked = tiny && ((actor.system.stats?.scale ?? actor.system.scale ?? 0) >= -2 || resolved.toughness > 1);
-  const immunity = blocked ? "Tiny melee cannot harm this target without a swarm."
+  const immunity = resolved.immunity ? `Immune to this damage (${resolved.immunity}).`
+    : blocked ? "Tiny melee cannot harm this target without a swarm."
     : actor.hasHeavyArmor && !damageIsHeavyWeapon(message) ? "Heavy Armor requires a Heavy Weapon." : "";
   return {...resolved, flags: rules.context.roll, immune: !!immunity, immunity};
 }
@@ -86,7 +92,7 @@ async function loadTargetedDamage() {
           // Preserve Targeted Damage's soak progress and correct its missing Hardy/heavy-armor check.
           const result = resultFor(actor, values);
           this.object.statusToApply = result.status;
-          if (!this.object.bestSoakAttempt) this.object.wounds = result.wounds;
+          if (values.immune || !this.object.bestSoakAttempt) this.object.wounds = result.wounds;
         } finally { Object.assign(this.object, original); this.sbeDefense = null; }
       }
       async _prepareContext(...args) { return {...await super._prepareContext(...args), sbe: this.sbeValues}; }
@@ -189,6 +195,13 @@ export async function openDamageRequest({messageUuid, tokenUuid, rollData}) {
     if (!TargetedAdapter) throw new Error("The Targeted Damage integration is unavailable. Disable SWADE Targeted Damage to resolve conditional effects.");
   }
   let [message, token] = await Promise.all([foundry.utils.fromUuid(messageUuid).catch(() => null), foundry.utils.fromUuid(tokenUuid)]);
+  const visible = message?.visible && message.isContentVisible !== false;
+  const outcome = visible && lingeringDamageRoll(message);
+  if (outcome) {
+    if (!outcome.context.targetUuids.includes(tokenUuid)) throw new Error("This token is not the target of the lingering damage.");
+    message = {uuid: message.uuid, visible: true, isContentVisible: true, significantRoll: outcome.roll,
+      getFlag: (scope, key) => scope === MODULE_ID && key === "context" ? outcome.context : undefined};
+  }
   // A GM may intentionally resolve a whispered roll against a player's actor. Send only the
   // damage context needed by the owner; never require access to the original private message.
   if ((!message?.visible || message.isContentVisible === false) && rollData && Number.isFinite(rollData.total) && Number.isFinite(rollData.ap)) {
@@ -211,13 +224,15 @@ export async function openDamageRequest({messageUuid, tokenUuid, rollData}) {
 
 export async function resolveMessageDamage(message) {
   const targeted = game.modules.get("swade-targeted-damage")?.active;
-  const tokens = targeted ? [...game.user.targets] : canvas.tokens?.controlled ?? [];
+  const context = messageContext(message);
+  const tokens = context.lingeringDamage ? (context.targetUuids ?? []).map(uuid => foundry.utils.fromUuidSync(uuid)).filter(Boolean)
+    : targeted ? [...game.user.targets] : canvas.tokens?.controlled ?? [];
   if (!tokens.length) return ui.notifications.warn(targeted ? "Target at least one token first." : "Select at least one token first.");
   for (const token of tokens) {
     const actor = token.actor;
     if (!actor) continue;
-    const request = {messageUuid: message.uuid, tokenUuid: token.document.uuid, rollData: {total: baseDamage(message), ap: damageAP(message),
-      isHeavyWeapon: !!damageIsHeavyWeapon(message), context: structuredClone(messageContext(message))}};
+    const request = {messageUuid: message.uuid, tokenUuid: (token.document ?? token).uuid, rollData: {total: baseDamage(message), ap: damageAP(message),
+      isHeavyWeapon: !!damageIsHeavyWeapon(message), context: structuredClone(context)}};
     const playerOwner = game.users.find(u => u.active && !u.isGM && u.character?.id === actor.id && actor.testUserPermission(u, "OWNER"))
       ?? game.users.find(u => u.active && !u.isGM && actor.testUserPermission(u, "OWNER"));
     if (actor.isOwner && (!targeted || !playerOwner || playerOwner.id === game.user.id)) await openDamageRequest(request);
@@ -243,7 +258,7 @@ export function renderDamageMessage(message, html) {
   html.addEventListener("click", event => {
     if (!event.target.closest("button.calculate-wounds")) return;
     const tokens = game.modules.get("swade-targeted-damage")?.active ? [...game.user.targets] : canvas.tokens?.controlled ?? [];
-    if (!tinyMelee(context) && !context.attackerRules?.length
+    if (!context.lingeringDamage && !tinyMelee(context) && !context.attackerRules?.length
       && !tokens.some(t => t.actor && (collectRules(t.actor).length
         || [...matchingDamageRules(damageRulesForTarget(context, t.actor, t.document ?? t))].some(rule => rule.resolutionOnly)))) return;
     event.preventDefault(); event.stopImmediatePropagation();

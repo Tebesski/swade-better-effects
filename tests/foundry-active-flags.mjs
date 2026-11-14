@@ -13,8 +13,8 @@ async function flagEffect(name,mode,flag){
   const app=page.locator(".sbe-aegis");await app.waitFor();
   assert.equal(await app.locator("details[open]").count(),0);
   await app.locator('[name="name"]').fill(name);
-  await app.locator('[data-category="other"] > summary').click();
-  await app.getByRole("button",{name:"Add flag rule",exact:true}).click();
+  await app.locator('[data-category="better"] > summary').click();
+  await app.getByRole("button",{name:"Flag rule",exact:true}).click();
   assert.deepEqual(await app.locator(".sbe-change select.type option").allTextContents(),["Add","Suppress"]);
   await app.locator(".sbe-change select.type").selectOption(mode);
   await app.getByLabel("Flag name",{exact:true}).fill(flag);await app.getByLabel("Flag name",{exact:true}).press("Tab");
