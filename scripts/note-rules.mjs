@@ -1,3 +1,4 @@
+import {t as sbsI18n} from "./i18n.mjs";
 import {normalizeFlags, selectorForKey, testPredicate} from "./rules.mjs";
 
 export const NOTE_PREFIX = "sbe.rollNote.";
@@ -30,10 +31,10 @@ function matchesRoll(selector, context, incoming) {
   if (kind === "damage" || kind === "targetDamage" || kind === "ap") return damage;
   if (damage) return false;
   return kind === "trait" || kind === context.attribute
-    || ["attack", "targetAttack"].includes(kind) && flags.includes("attack")
+    || ["attack", sbsI18n("swade-better-effects.UI.targetAttack_c5d6dea11e")].includes(kind) && flags.includes("attack")
     || kind === "targetAttackRanged" && flags.includes("attack") && flags.includes("ranged")
     || kind === "targetAttackMelee" && flags.includes("attack") && flags.includes("melee")
-    || ["gangUpAttack", "gangUpDefend"].includes(kind) && flags.includes("gang-up");
+    || [sbsI18n("swade-better-effects.UI.gangUpAttack_9d89bd6160"), sbsI18n("swade-better-effects.UI.gangUpDefend_d7d7ef8376")].includes(kind) && flags.includes("gang-up");
 }
 
 // Notes are resolved once for a posted roll. Rerolls retain this snapshot.

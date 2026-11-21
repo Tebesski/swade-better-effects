@@ -21,7 +21,7 @@ function flagChanges(effect) {
   const conditions = effect.flags?.[scope]?.conditions ?? [];
   if (!Array.isArray(conditions) || conditions.some((entry, index) => hasCondition(entry?.predicate) && entry.signature !== changeSignature(changes[index] ?? {}))) return [];
   return changes.filter((change, index) => change.key === MODIFY_FLAG_KEY && !hasCondition(conditions[index]?.predicate))
-    .map(change => ({type: change.type, flag: normalizeFlag(change.value)})).filter(change => change.flag);
+    .flatMap(change => normalizeFlags(change.value).map(flag => ({type: change.type, flag})));
 }
 
 // Return a source component of the remaining suppression graph. Mutually

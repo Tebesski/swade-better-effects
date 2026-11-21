@@ -1,0 +1,36 @@
+<div class="standard-form sbe-application-rule">
+  <div class="form-group"><label for="sbe-application-behaviour">{{localize "swade-better-effects.UI.Behaviour_12b98040fa"}}</label><div class="form-fields">
+    <select id="sbe-application-behaviour" name="behaviour">{{selectOptions behaviours selected=rule.behaviour}}</select>
+  </div></div>
+  <div class="form-group" data-recipient><label for="sbe-application-recipient">{{localize "swade-better-effects.UI.Recipient_51fac985e9"}}</label><div class="form-fields">
+    <select id="sbe-application-recipient" name="recipient">{{selectOptions recipients selected=rule.recipient}}</select>
+  </div></div>
+  <div class="form-group"><label for="sbe-application-condition">{{localize "swade-better-effects.UI.Condition_39b36d38d6"}}</label><div class="form-fields">
+    <select id="sbe-application-condition" name="condition">{{selectOptions conditions selected=rule.condition}}</select>
+  </div></div>
+  <div class="form-group" data-wounds><label for="sbe-application-wounds">{{localize "swade-better-effects.UI.Minimumwoundsapplied_68592a0f5c"}}</label><div class="form-fields">
+    <input id="sbe-application-wounds" name="wounds" type="number" min="1" step="1" value="{{rule.wounds}}">
+  </div></div>
+  <div class="form-group stacked" data-behaviour="note"><label for="sbe-application-note">{{localize "swade-better-effects.UI.Note_d8da2c49df"}}</label><textarea id="sbe-application-note" name="note" rows="4">{{rule.note}}</textarea></div>
+  <div data-behaviour="request">
+    <div class="form-group"><label for="sbe-application-trait">{{localize "swade-better-effects.UI.Trait_28e3e479e0"}}</label><div class="form-fields">
+      <input id="sbe-application-trait" name="trait" type="text" list="sbe-application-traits" value="{{rule.trait}}">
+      <datalist id="sbe-application-traits">{{#each traits}}<option value="{{this}}"></option>{{/each}}</datalist>
+    </div></div>
+    <div class="form-group"><label for="sbe-application-tn">{{localize "swade-better-effects.UI.Targetnumber_7edd3afa64"}}</label><div class="form-fields">
+      <input id="sbe-application-tn" name="tn" type="number" value="{{rule.tn}}">
+    </div></div>
+  </div>
+  <div data-behaviour="effect">{{> "modules/swade-better-effects/templates/effect-reference.hbs"}}</div>
+  <div data-behaviour="macro" class="form-group stacked">
+    <label for="sbe-application-macro">{{localize "swade-better-effects.UI.Macro_cdf16ec115"}}</label>
+    <input id="sbe-application-macro" name="macroUuid" type="text" value="{{rule.macroUuid}}" placeholder="{{localize "swade-better-effects.UI.Dropamacroorenterits_1d233d662f"}}">
+    <button type="button" class="sbe-outcome-effect-link sbe-application-macro-link" hidden><img alt=""><span></span></button>
+  </div>
+  <div class="form-group"><label for="sbe-application-flags">{{localize "swade-better-effects.UI.Additionalflags_7f6ff7e137"}}</label><div class="form-fields">
+    <input id="sbe-application-flags" name="flags" type="text" value="{{flags}}">
+  </div><p class="hint">{{localize "swade-better-effects.UI.Therulealsoinheritstheeffect_2b83cf3402"}}</p></div>
+  <div class="form-group"><label for="sbe-application-remove">{{localize "swade-better-effects.UI.RemoveonUse_3486d826a6"}}</label><div class="form-fields">
+    <input id="sbe-application-remove" name="removeOnUse" type="checkbox" {{checked rule.removeOnUse}}>
+  </div><p class="hint">{{localize "swade-better-effects.UI.Askthesourcesownerwhether_b0aec8041e"}}</p></div>
+</div>

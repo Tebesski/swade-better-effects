@@ -1,8 +1,12 @@
+import {t as sbsI18n} from "./i18n.mjs";
 import {normalizeFlag, normalizeFlags} from "./rules.mjs";
 import {applyFlagChanges, suppressesFlag} from "./flag-changes.mjs";
 
 export const EQUIPMENT_FLAGS = ["stored", "carried", "equipped", "off-hand", "main-hand", "two-hands"];
-export const STANDARD_FLAGS = ["attack", "damage", "trait", "opposed", "success", "fail", "critical-failure", "raise-1", "power-preparation", "power-maintain", "attribute", "skill", "power", "weapon", "melee", "ranged", "gear", "armor", "shield", "consumable", "edge", "hindrance", "ability", "ancestry", "wildcard", "extra", "agility", "smarts", "spirit", "strength", "vigor", ...EQUIPMENT_FLAGS];
+const CARD_RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king", "ace"];
+const JOKER_RANKS = {96: "green-joker", 97: "blue-joker", 98: "black-joker", 99: "red-joker"};
+export const STANDARD_FLAGS = ["attack", "damage", "trait", "opposed", "support", "test", "success", "fail", "critical-failure", "raise-1", "power-preparation", "power-maintain", "attribute", "skill", "power", "weapon", "melee", "ranged", "gear", "armor", "shield", "consumable", "edge", "hindrance", "ability", "ancestry", "wildcard", "extra", "agility", "smarts", "spirit", "strength", "vigor", ...EQUIPMENT_FLAGS,
+  "card-face", "card-number", "card-joker", ...[...CARD_RANKS, ...Object.values(JOKER_RANKS)].map(rank => `card-${rank}`)];
 const physical = new Set(["weapon", "armor", "shield", "gear", "consumable"]);
 export const isGear = doc => doc?.documentName === "Item" && physical.has(doc.type);
 export const customFlags = doc => normalizeFlags(doc?.getFlag?.("swade-better-effects", "tags") ?? doc?.flags?.["swade-better-effects"]?.tags ?? []);
@@ -23,16 +27,32 @@ export function itemGrantsFlags(item) {
   return flagActivation(item) === "carried" ? state >= 1 : state > 1;
 }
 
-export function automaticFlags(doc) {
+function actionCardFlags(actor, token) {
+  const combatant = token ? token.combatant : actor.getCombatant?.(globalThis.game?.combat);
+  const holder = combatant?.groupLeader ?? combatant;
+  // SWADE can set cardValue for sorting even when no card has been dealt.
+  if (holder?.initiative == null || !holder.cardString) return [];
+  const value = holder.cardValue;
+  if (holder.hasJoker) return ["card-joker", JOKER_RANKS[value] && `card-${JOKER_RANKS[value]}`];
+  const rank = CARD_RANKS[value - 2];
+  if (!rank) return [];
+  const category = value <= 10 ? "card-number" : value <= 13 ? "card-face" : "";
+  return [`card-${rank}`, category];
+}
+
+export function automaticFlags(doc, token) {
   if (doc?.documentName === "ActiveEffect") return normalizeFlags([normalizeFlag(doc.name)]);
   if (doc?.documentName === "Item") {
-    const flags = [normalizeFlag(doc.name), doc.type === "power" ? normalizeFlag(doc.system?.arcane) : "", ...equipmentFlags(doc)];
+    const flags = [normalizeFlag(doc.name), ...equipmentFlags(doc)];
+    if (doc.type === "power") {
+      flags.push(normalizeFlag(doc.system?.arcane), ...normalizeFlags(doc.system?.trapping).map(name => `trapping-${name}`));
+    }
     globalThis.Hooks?.callAll("swadeBetterEffectsAutomaticFlags", doc, flags);
     return normalizeFlags(flags);
   }
   if (doc?.documentName !== "Actor") return [];
   const size = doc.type === "vehicle" ? doc.system?.size : doc.system?.stats?.size;
-  return normalizeFlags([ancestryFlag(doc), Number.isInteger(size) ? `size${size}` : ""]);
+  return normalizeFlags([ancestryFlag(doc), Number.isInteger(size) ? `size${size}` : "", ...actionCardFlags(doc, token)]);
 }
 
 export function ancestryFlag(doc) {
@@ -47,8 +67,8 @@ function flagEffects(doc) {
 
 export function isFlagSuppressed(doc, flag) { return suppressesFlag(flagEffects(doc), flag); }
 
-function suppliedFlags(doc) {
-  let flags = normalizeFlags([...automaticFlags(doc), ...customFlags(doc)]);
+function suppliedFlags(doc, token) {
+  let flags = normalizeFlags([...automaticFlags(doc, token), ...customFlags(doc)]);
   if (isGear(doc)) {
     const state = equipmentFlags(doc)[0];
     flags = flags.filter(flag => !EQUIPMENT_FLAGS.includes(flag) || flag === state);
@@ -56,9 +76,9 @@ function suppliedFlags(doc) {
   return applyFlagChanges(flags, flagEffects(doc));
 }
 
-export function effectiveFlags(doc) {
+export function effectiveFlags(doc, token) {
   const excluded = new Set(excludedFlags(doc));
-  return suppliedFlags(doc).filter(flag => !excluded.has(flag));
+  return suppliedFlags(doc, token).filter(flag => !excluded.has(flag));
 }
 
 export function flagInputData(doc, value) {
@@ -85,7 +105,7 @@ export function flagsAfterAncestryChange(doc, name) {
   return {excludedTags: excludedFlags(doc).filter(excluded => excluded !== flag)};
 }
 
-export function rollCategoryFlags(item, {kind = "damage", attribute, skill} = {}) {
+export function rollCategoryFlags(item, {kind = sbsI18n("swade-better-effects.UI.damage_6f5a5c61cc"), attribute, skill} = {}) {
   const flags = [kind, attribute, normalizeFlag(skill?.name ?? skill)];
   if (kind !== "damage") flags.push("trait", skill ? "skill" : "attribute");
   if (item?.type === "power") flags.push("power");
@@ -96,4 +116,10 @@ export function rollCategoryFlags(item, {kind = "damage", attribute, skill} = {}
     if (item.system.isRanged && (!item.system.isMelee || !fighting)) flags.push("ranged");
   }
   return normalizeFlags(flags);
+}
+
+export function hudActionFlag(item, inCombat) {
+  const kind = item?.flags?.["swade-hud"]?.actionKind ?? item?.flags?.["swade-better-setting"]?.actionKind;
+  if (kind === "intimidation" && inCombat) return "test";
+  return ["support", "test"].includes(kind) ? kind : undefined;
 }

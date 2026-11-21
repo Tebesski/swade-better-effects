@@ -1,7 +1,9 @@
-import {MODULE_ID, TEMPLATE} from "./constants.mjs";
+import {t as sbsI18n} from "./i18n.mjs";
+import {APPLICATION_KEY, MODULE_ID, TEMPLATE} from "./constants.mjs";
 import {normalizeFlag, normalizeFlags, predicateFlags} from "./rules.mjs";
 import {ancestryFlag, effectiveFlags, excludedFlags, flagActivation, flagInputData, flagsAfterAncestryChange, flagsAfterEquipmentChange, isGear, STANDARD_FLAGS} from "./default-flags.mjs";
 import {MODIFY_FLAG_KEY} from "./flag-changes.mjs";
+import {bindFlagSuggestions} from "../../swade-better-setting/scripts/flag-suggestions.mjs";
 
 export const documentFlags = effectiveFlags;
 
@@ -9,36 +11,76 @@ export function rollTarget(context, token, actor = token?.actor) {
   const document = token?.document ?? token;
   const item = context.targetItemId && context.targetUuids?.includes(document?.uuid)
     ? actor?.items?.get(context.targetItemId) : undefined;
-  const flags = item ? documentFlags(item) : [...documentFlags(actor), ...documentFlags(document)];
+  const flags = item ? documentFlags(item) : [...documentFlags(actor, document?.documentName === "Token" ? document : undefined), ...documentFlags(document)];
   globalThis.Hooks?.callAll("swadeBetterEffectsTargetFlags", context, document, actor, item, flags);
   return {item, flags: normalizeFlags(flags)};
 }
-export function catalogFlags() { return normalizeFlags([...STANDARD_FLAGS, ...game.settings.get(MODULE_ID, "flagLibrary")]); }
-let pendingCatalog = Promise.resolve();
+let catalogSource;
+let catalog;
+let knownFlags;
+export function catalogFlags() {
+  const setting = game.settings.get(MODULE_ID, "flagLibrary", {document: true});
+  const source = setting.id ? setting.value : null;
+  if (source !== catalogSource) {
+    catalogSource = source;
+    catalog = Object.freeze(normalizeFlags([...STANDARD_FLAGS, ...(source ?? [])]));
+    knownFlags = new Set(catalog);
+  }
+  return catalog;
+}
 
+const canRememberFlags = () => game.user.isGM && (game.users.activeGM?.isSelf ?? true);
+const pendingFlags = new Set();
+let pendingCatalog;
 export function rememberFlags(flags) {
-  if (!game.user.isGM || (game.users.activeGM && game.users.activeGM.id !== game.user.id)) return;
+  if (!canRememberFlags()) return;
   const additions = normalizeFlags(flags);
-  pendingCatalog = pendingCatalog.then(async () => {
-    const old = catalogFlags();
-    const next = normalizeFlags([...old, ...additions]);
-    if (JSON.stringify(old) !== JSON.stringify(next)) await game.settings.set(MODULE_ID, "flagLibrary", next);
-  }).catch(error => console.error(`${MODULE_ID} | Flag library`, error));
+  if (!additions.length) return pendingCatalog;
+  catalogFlags();
+  for (const flag of additions) if (!knownFlags.has(flag)) pendingFlags.add(flag);
+  if (pendingFlags.size && !pendingCatalog) pendingCatalog = savePendingFlags();
   return pendingCatalog;
+}
+
+async function savePendingFlags() {
+  try {
+    // Collect changes emitted together by a single Foundry document operation.
+    await Promise.resolve();
+    while (pendingFlags.size) {
+      const current = catalogFlags();
+      const additions = [...pendingFlags].filter(flag => !knownFlags.has(flag));
+      pendingFlags.clear();
+      if (additions.length && canRememberFlags()) await game.settings.set(MODULE_ID, "flagLibrary", [...current, ...additions].sort());
+    }
+  } catch (error) {
+    console.error(`${MODULE_ID} | Flag library`, error);
+  } finally {
+    pendingCatalog = undefined;
+  }
 }
 
 export function flagsInDocument(document) {
   const data = document.flags?.[MODULE_ID] ?? {};
   return normalizeFlags([...documentFlags(document), ...(data.context?.roll ?? []), ...(data.conditions ?? []).flatMap(c => predicateFlags(c?.predicate)),
-    ...(document.system?.changes ?? []).filter(change => change.key === MODIFY_FLAG_KEY).map(change => change.value),
+    ...(document.system?.changes ?? []).flatMap(change => change.key === MODIFY_FLAG_KEY ? normalizeFlags(change.value)
+      : change.key === APPLICATION_KEY ? normalizeFlags(change.value?.flags) : []),
     ...(data.rules ?? []).flatMap(r => predicateFlags(r.predicate))]);
 }
 
 export function registerFlagHooks() {
-  Hooks.once("ready", () => {
+  Hooks.once("ready", async () => {
+    if (!canRememberFlags()) return;
     const docs = [...game.actors, ...game.items, ...game.scenes];
-    return rememberFlags(docs.flatMap(doc => [...flagsInDocument(doc), ...[...(doc.items ?? [])].flatMap(flagsInDocument),
-      ...[...(doc.allApplicableEffects?.() ?? doc.effects ?? [])].flatMap(flagsInDocument)]));
+    const flags = new Set();
+    for (let start = 0; start < docs.length; start += 50) {
+      for (const doc of docs.slice(start, start + 50)) {
+        for (const entry of [doc, ...(doc.items ?? []), ...(doc.allApplicableEffects?.() ?? doc.effects ?? [])]) {
+          for (const flag of flagsInDocument(entry)) flags.add(flag);
+        }
+      }
+      if (start + 50 < docs.length) await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    return rememberFlags([...flags]);
   });
   for (const type of ["Actor", "Item", "Token", "ActiveEffect", "Scene", "JournalEntry", "ChatMessage"]) {
     Hooks.on(`preCreate${type}`, document => {
@@ -66,7 +108,9 @@ export function registerFlagHooks() {
         foundry.utils.setProperty(changes, excludedKey, excludedFlags(document).filter(flag => !tags.includes(flag)));
       }
     });
-    for (const event of ["create", "update"]) Hooks.on(`${event}${type}`, document => rememberFlags(flagsInDocument(document)));
+    for (const event of ["create", "update"]) Hooks.on(`${event}${type}`, document => {
+      if (canRememberFlags()) return rememberFlags(flagsInDocument(document));
+    });
   }
   Hooks.on("preUpdateActor", (actor, changes) => {
     const path = "system.details.species.name";
@@ -100,7 +144,7 @@ export function registerFlagHooks() {
     const state = Object.hasOwn(changes, stateKey) ? changes[stateKey] : foundry.utils.getProperty(changes, stateKey);
     if (!isGear(item) || state === undefined || Number(state) === Number(item.system.equipStatus)) return;
     const data = structuredClone(item.flags?.[MODULE_ID] ?? {});
-    for (const key of ["tags", "excludedTags"]) {
+    for (const key of ["tags", sbsI18n("swade-better-effects.UI.excludedTags_e68b10a6ab")]) {
       const path = `flags.${MODULE_ID}.${key}`;
       const value = Object.hasOwn(changes, path) ? changes[path] : foundry.utils.getProperty(changes, path);
       if (value !== undefined) data[key] = value;
@@ -116,7 +160,7 @@ export function registerFlagHooks() {
 
 export class FlagLibrary extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
   static DEFAULT_OPTIONS = {
-    id: "sbe-flag-library", tag: "form", classes: ["sbe-app"], window: {title: "Better Effects — Flag Library"}, position: {width: 500},
+    id: "sbe-flag-library", tag: "form", classes: ["sbe-app"], window: {get title() { return sbsI18n("swade-better-effects.UI.BetterEffectsFlagLibrary_8a99e82656"); }}, position: {width: 500},
     form: {handler: FlagLibrary.save, closeOnSubmit: true}, actions: {scan: FlagLibrary.scan, add: FlagLibrary.add, remove: FlagLibrary.remove}
   };
   static PARTS = {form: {template: `${TEMPLATE}/flag-library.hbs`}};
@@ -179,11 +223,15 @@ export class FlagLibrary extends foundry.applications.api.HandlebarsApplicationM
 export class DocumentFlagsEditor extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
   constructor(document) { super(); this.document = document; }
   static DEFAULT_OPTIONS = {
-    tag: "form", classes: ["sbe-app"], window: {title: "Better Effects — Flags"}, position: {width: 460},
+    tag: "form", classes: ["sbe-app"], window: {get title() { return sbsI18n("swade-better-effects.UI.BetterEffectsFlags_46fc7f00ea"); }}, position: {width: 460},
     form: {handler: DocumentFlagsEditor.save, closeOnSubmit: true}
   };
   static PARTS = {form: {template: `${TEMPLATE}/document-flags.hbs`}};
-  async _prepareContext() { return {name: this.document.name, tags: documentFlags(this.document).join(", "), flags: catalogFlags(), editable: this.document.isOwner, listId: `${this.id}-flags`, isGear: isGear(this.document), activation: flagActivation(this.document)}; }
+  async _prepareContext() { return {name: this.document.name, tags: documentFlags(this.document).join(", "), editable: this.document.isOwner, inputId: `${this.id}-flags`, isGear: isGear(this.document), activation: flagActivation(this.document)}; }
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    bindFlagSuggestions(this.element.querySelector('[name="tags"]'), catalogFlags, {multiple: true, normalize: normalizeFlag});
+  }
   static async save(_event, _form, data) {
     if (this.document.isOwner) await saveDocumentFlags(this.document, data.object.tags, data.object.flagActivation);
   }
@@ -198,11 +246,12 @@ async function saveDocumentFlags(doc, value, activation) {
 
 export function injectFlagField(app, html) {
   const doc = app.document;
+  if (doc?.documentName === "Actor" && doc.type === "group") return;
   if (!doc || !["Actor", "Item", "Token", "ActiveEffect"].includes(doc.documentName)) return;
   const existing = html.querySelector(".sbe-tags-field");
   if (existing) {
     const input = existing.querySelector("input");
-    if (input && document.activeElement !== input) input.value = documentFlags(doc).join(", ");
+    if (input && input.ownerDocument.activeElement !== input) input.value = documentFlags(doc).join(", ");
     return;
   }
   const effectName = doc.documentName === "ActiveEffect" ? html.querySelector('[name="name"]') : null;
@@ -213,34 +262,31 @@ export function injectFlagField(app, html) {
   if (!target) return;
   const group = document.createElement("div");
   group.className = "form-group sbe-tags-field";
-  const label = document.createElement("label"); label.textContent = "Flags";
+  const label = document.createElement("label"); label.textContent = sbsI18n("swade-better-effects.UI.Flags_f38d9950af");
   const fields = document.createElement("div"); fields.className = "form-fields";
   const input = document.createElement("input"); input.type = "text"; input.value = documentFlags(doc).join(", ");
-  input.placeholder = "fire, silver"; input.disabled = !doc.isOwner;
+  input.placeholder = sbsI18n("swade-better-effects.UI.firesilver_8578cc40fc"); input.disabled = !doc.isOwner;
   input.id = `${app.id}-sbe-flags`; label.htmlFor = input.id;
-  input.setAttribute("aria-label", "Flags");
-  const list = document.createElement("datalist"); list.id = `${app.id}-sbe-tags`;
-  input.setAttribute("list", list.id);
-  const suggestions = () => {
-    const parts = input.value.split(","); parts.pop(); const prefix = parts.map(p => p.trim()).filter(Boolean).join(", ");
-    list.replaceChildren(...catalogFlags().map(flag => { const option = document.createElement("option"); option.value = prefix ? `${prefix}, ${flag}` : flag; return option; }));
-  };
-  suggestions(); input.addEventListener("input", suggestions);
+  input.setAttribute("aria-label", sbsI18n("swade-better-effects.UI.Flags_f38d9950af"));
   // This field owns its update, rather than letting the host form store a string in flags.tags.
   input.addEventListener("change", event => {
     event.stopImmediatePropagation();
-    saveDocumentFlags(doc, input.value, activation?.value).then(() => { input.value = documentFlags(doc).join(", "); }).catch(error => ui.notifications.error(error.message));
+    const value = input.value;
+    saveDocumentFlags(doc, value, activation?.value).then(() => {
+      if (input.value === value) input.value = documentFlags(doc).join(", ");
+    }).catch(error => ui.notifications.error(error.message));
   });
   let activation;
   if (isGear(doc)) {
-    activation = document.createElement("select"); activation.className = "sbe-flag-activation"; activation.setAttribute("aria-label", "Flag activation"); activation.disabled = !doc.isOwner;
-    for (const [value, text] of [["equipped", "When equipped"], ["carried", "When carried"]]) {
+    activation = document.createElement("select"); activation.className = "sbe-flag-activation"; activation.setAttribute("aria-label", sbsI18n("swade-better-effects.UI.Flagactivation_a373ed66cc")); activation.disabled = !doc.isOwner;
+    for (const [value, text] of [["equipped", sbsI18n("swade-better-effects.UI.Whenequipped_0a55e11457")], ["carried", sbsI18n("swade-better-effects.UI.Whencarried_e24f4b1e5f")]]) {
       const option = new Option(text, value); option.selected = value === flagActivation(doc); activation.append(option);
     }
     activation.addEventListener("change", event => { event.stopImmediatePropagation(); doc.setFlag(MODULE_ID, "flagActivation", activation.value).catch(error => ui.notifications.error(error.message)); });
   }
-  fields.append(input, list); if (activation) fields.append(activation); group.append(label, fields);
+  fields.append(input); if (activation) fields.append(activation); group.append(label, fields);
   const trademark = properties?.querySelector('[name="system.trademark"]')?.closest(".form-group");
   if (effectName) effectName.after(group);
   else if (trademark) trademark.before(group); else if (effects) effects.append(group); else target.append(group);
+  bindFlagSuggestions(input, catalogFlags, {multiple: true, normalize: normalizeFlag});
 }

@@ -1,15 +1,15 @@
 <section class="standard-form">
-  <input type="search" aria-label="Search roll requests" placeholder="Search roll requests" value="{{query}}" autocomplete="off">
+  <input type="search" aria-label="{{localize "swade-better-effects.UI.Searchrollrequests_7f7c97ad60"}}" placeholder="{{localize "swade-better-effects.UI.Searchrollrequests_7f7c97ad60"}}" value="{{query}}" autocomplete="off">
   <ol class="plain sbe-request-library-list">
     {{#each entries}}<li data-request-search="{{name}} {{request.name}} {{flags}}">
-      <div class="sbe-request-library-info"><strong>{{name}}</strong><span>{{request.name}} · TN {{request.targetNumber}}</span><small>{{visibility}}{{#if flags}} · {{flags}}{{/if}}</small></div>
+      <div class="sbe-request-library-info"><strong>{{name}}</strong><span>{{request.name}} {{localize "swade-better-effects.UI.TN_0de9573cc9"}} {{request.targetNumber}}</span><small>{{visibility}}{{#if flags}} · {{flags}}{{/if}}</small></div>
       <div class="sbe-request-library-actions">
-        <button type="button" data-action="generateRequest" data-id="{{id}}" class="icon fa-solid fa-dice" aria-label="Generate {{name}}" title="Generate request"></button>
-        <a role="button" tabindex="0" data-action="editRequest" data-id="{{id}}" aria-label="Edit {{name}}" title="Edit request"><i class="fa-solid fa-pen-to-square" inert></i></a>
-        <a role="button" tabindex="0" data-action="deleteRequest" data-id="{{id}}" aria-label="Delete {{name}}" title="Delete request"><i class="fa-solid fa-trash" inert></i></a>
+        <button type="button" data-action="generateRequest" data-id="{{id}}" class="icon fa-solid fa-dice" aria-label="Generate {{name}}" title="{{localize "swade-better-effects.UI.Generaterequest_1e95acc94e"}}"></button>
+        <a role="button" tabindex="0" data-action="editRequest" data-id="{{id}}" aria-label="Edit {{name}}" title="{{localize "swade-better-effects.UI.Editrequest_c5a6b24b7a"}}"><i class="fa-solid fa-pen-to-square" inert></i></a>
+        <a role="button" tabindex="0" data-action="deleteRequest" data-id="{{id}}" aria-label="Delete {{name}}" title="{{localize "swade-better-effects.UI.Deleterequest_6548cf87ee"}}"><i class="fa-solid fa-trash" inert></i></a>
       </div>
     </li>{{/each}}
   </ol>
-  <p class="hint sbe-request-library-empty" hidden>No matching requests.</p>
-  <button type="button" data-action="createRequest"><i class="fa-solid fa-plus" inert></i> Create Roll Request</button>
+  <p class="hint sbe-request-library-empty" hidden>{{localize "swade-better-effects.UI.Nomatchingrequests_c0661a5832"}}</p>
+  <button type="button" data-action="createRequest"><i class="fa-solid fa-plus" inert></i> {{localize "swade-better-effects.UI.CreateRollRequest_2383bb394e"}}</button>
 </section>

@@ -1,3 +1,4 @@
+import {t as sbsI18n} from "./i18n.mjs";
 import {MODULE_ID, TEMPLATE} from "./constants.mjs";
 import {mergeRequestPresets, validateRequest} from "./request-data.mjs";
 
@@ -7,9 +8,9 @@ let actions, libraryApp, migration;
 export const savedRollRequests = () => structuredClone(game.settings.get(MODULE_ID, "rollRequests"));
 
 export async function saveRollRequest({id, name, request}) {
-  if (!game.user.isGM) throw new Error("Only a GM or Assistant GM can save roll requests.");
+  if (!game.user.isGM) throw new Error(sbsI18n("swade-better-effects.UI.OnlyaGMorAssistantGM_61edcf322a"));
   const entry = {id: id || foundry.utils.randomID(), name, request: structuredClone(request)};
-  if (!name?.trim() || !validateRequest(request)) throw new Error("Complete the roll request before saving it.");
+  if (!name?.trim() || !validateRequest(request)) throw new Error(sbsI18n("swade-better-effects.UI.Completetherollrequestbeforesaving_c10486f715"));
   const entries = savedRollRequests(), index = entries.findIndex(item => item.id === entry.id);
   if (index < 0) entries.push(entry); else entries[index] = entry;
   await game.settings.set(MODULE_ID, "rollRequests", entries);
@@ -25,14 +26,14 @@ export function openRollRequestLibrary() {
 export function registerRollRequestSettings(callbacks) {
   actions = callbacks;
   game.settings.register(MODULE_ID, "rollRequests", {scope: "world", config: false, type: Array, default: []});
-  game.settings.registerMenu(MODULE_ID, "rollRequests", {name: "Roll Requests", label: "Manage roll requests", hint: "Create, edit, and generate saved roll requests.",
+  game.settings.registerMenu(MODULE_ID, "rollRequests", {name: sbsI18n("swade-better-effects.UI.RollRequests_00c9424c24"), label: sbsI18n("swade-better-effects.UI.Managerollrequests_9f34328b28"), hint: sbsI18n("swade-better-effects.UI.Createeditandgeneratesavedroll_795ef8e82f"),
     icon: "fa-solid fa-dice", type: RollRequestLibrary, restricted: true});
   Hooks.on("updateSetting", setting => { if (setting.key === `${MODULE_ID}.rollRequests` && libraryApp?.rendered) libraryApp.render(); });
 }
 
 export class RollRequestLibrary extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
   constructor(...args) { super(...args); libraryApp = this; }
-  static DEFAULT_OPTIONS = {classes: ["sbe-app", "sbe-request-library"], position: {width: 580}, window: {title: "Roll Requests", icon: "fa-solid fa-dice"},
+  static DEFAULT_OPTIONS = {classes: ["sbe-app", "sbe-request-library"], position: {width: 580}, window: {get title() { return sbsI18n("swade-better-effects.UI.RollRequests_00c9424c24"); }, icon: "fa-solid fa-dice"},
     actions: {
       createRequest: function () { actions.open(undefined, {fresh: true}); },
       editRequest: function (_event, target) { const entry = savedRollRequests().find(item => item.id === target.dataset.id); if (entry) actions.open(entry); },
@@ -44,10 +45,10 @@ export class RollRequestLibrary extends foundry.applications.api.HandlebarsAppli
     }};
   static PARTS = {library: {template: `${TEMPLATE}/request-library.hbs`}};
   async _prepareContext() {
-    if (!game.user.isGM) throw new Error("Only a GM or Assistant GM can manage roll requests.");
+    if (!game.user.isGM) throw new Error(sbsI18n("swade-better-effects.UI.OnlyaGMorAssistantGM_1190477730"));
     return {query: this.query ?? "", entries: savedRollRequests().sort((a,b) => a.name.localeCompare(b.name)).map(entry => ({...entry,
       flags: entry.request.flags.join(", "), visibility: entry.request.recipients?.length
-        ? `Private: ${entry.request.recipients.map(id => game.users.get(id)?.name ?? "Missing player").join(", ")}` : "Public"}))};
+        ? `Private: ${entry.request.recipients.map(id => game.users.get(id)?.name ?? sbsI18n("swade-better-effects.UI.Missingplayer_375eb530c9")).join(", ")}` : sbsI18n("swade-better-effects.UI.Public_591935b15b")}))};
   }
   async _onRender(context, options) {
     await super._onRender(context, options);

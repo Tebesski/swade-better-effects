@@ -2,6 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {mergeRequestPresets, traitName, traitRequest, validateRequest} from "../scripts/request-data.mjs";
 const attributes = [{key: "agility", name: "Agility"}, {key: "spirit", name: "Spirit"}];
+test("lingering request modifiers keep their sign independently of legacy penalties", () => {
+  for (const modifier of [-3, 0, 2, 1.5]) {
+    const request = traitRequest({trait: "Vigor", modifier}, attributes);
+    assert.equal(request.modifier ?? 0, modifier);
+    assert.equal(validateRequest(request), true);
+  }
+  assert.throws(() => traitRequest({trait: "Vigor", modifier: Infinity}, attributes));
+});
 test("requests resolve attributes and named skills, normalize flags, and default to TN 4", () => {
   const request = traitRequest({trait: " agility ", flags: " FIRE, cold iron, Fire "}, attributes);
   assert.equal(request.kind, "attribute"); assert.equal(request.trait, "agility"); assert.equal(request.targetNumber, 4);
@@ -33,6 +41,13 @@ test("invalid request data cannot create nonfinite targets or malformed template
   assert.throws(() => traitRequest({trait: "Athletics", kind: "attribute"}, attributes));
   const valid = traitRequest({trait: "Athletics"}, attributes);
   for (const data of [{...valid, flags: "fire"}, {...valid, recipients: {}}, {...valid, targetNumber: NaN}, {...valid, name: ""}, {...valid, kind: "damage"}]) assert.equal(validateRequest(data), false);
+});
+test("saved requests retain optional multiline descriptions", () => {
+  const request = traitRequest({trait: "Notice", description: " Look for tracks.\nCheck the doorway. "}, attributes);
+  assert.equal(request.description, "Look for tracks.\nCheck the doorway.");
+  assert.equal(mergeRequestPresets([], [{id: "one", name: "Search", request}])[0].request.description, request.description);
+  assert.equal(validateRequest({...request, description: {}}), false);
+  assert.equal(traitRequest({trait: "Notice", description: " "}, attributes).description, undefined);
 });
 test("legacy presets retain names, flags and recipients without overwriting settings edits", () => {
   const request = {...traitRequest({trait: "Athletics", flags: "grapple", tn: 8}, attributes), recipients: ["alice"]};

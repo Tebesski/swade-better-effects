@@ -1,7 +1,8 @@
+import {t as sbsI18n} from "./i18n.mjs";
 import {rollTarget} from "./flags.mjs";
 import {normalizeFlags} from "./rules.mjs";
 
-function flagList(flags) {
+export function flagList(flags) {
   const list = document.createElement("div");
   list.className = "sbe-roll-flags";
   for (const flag of normalizeFlags(flags)) {
@@ -13,7 +14,7 @@ function flagList(flags) {
   if (!list.children.length) {
     const empty = document.createElement("span");
     empty.className = "hint";
-    empty.textContent = "No flags";
+    empty.textContent = sbsI18n("swade-better-effects.UI.Noflags_50aa828f5b");
     list.append(empty);
   }
   return list;
@@ -38,7 +39,7 @@ export function messageTargets(message, context) {
 
 export function renderChatFlags(message, html, context) {
   const content = html.querySelector(".message-content") ?? html;
-  const roll = accordion("Flags", "sbe-chat-roll-flags");
+  const roll = accordion(sbsI18n("swade-better-effects.UI.BetterEffectsflags_3bb5f82be2"), "sbe-chat-roll-flags");
   roll.append(flagList(context.roll));
   content.append(roll);
 
@@ -47,13 +48,11 @@ export function renderChatFlags(message, html, context) {
   if (!game.user.isGM) return;
   const targets = messageTargets(message, context);
   if (!targets.length) return;
-  const targetFlags = accordion("Target flags", "sbe-chat-target-flags");
   for (const token of targets) {
-    const group = document.createElement("section");
-    const name = document.createElement("strong");
-    name.textContent = token.name;
-    group.append(name, flagList(rollTarget(context, token).flags));
-    targetFlags.append(group);
+    const row = [...html.querySelectorAll(".sbe-target-row")].find(row => row.dataset.tokenUuid === token.uuid);
+    if (row) {
+      row.querySelector(".sbe-target-flags")?.append(flagList(rollTarget(context, token).flags));
+      continue;
+    }
   }
-  html.append(targetFlags);
 }

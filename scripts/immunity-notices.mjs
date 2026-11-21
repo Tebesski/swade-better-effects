@@ -18,7 +18,7 @@ function matchedFlags(node, context, negated = false) {
   return node.children.flatMap(child => matchedFlags(child, context, negated));
 }
 
-function immunityMatch({context, defenderRules}, {requireFlag = false} = {}) {
+export function immunityMatch({context, defenderRules}, {requireFlag = false} = {}) {
   const rules = [...matchingDamageRules({context, defenderRules})].filter(rule => rule.selector === "immunity");
   const flags = normalizeFlags(rules.flatMap(rule => matchedFlags(rule.predicate, {...context, actor: rule.ownerFlags ?? []})));
   return rules.length && (!requireFlag || flags.length) ? flags : null;

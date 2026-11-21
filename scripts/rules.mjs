@@ -1,3 +1,4 @@
+import {t as sbsI18n} from "./i18n.mjs";
 // No Foundry globals: this is also the executable rules specification used by tests.
 import {DEFENSES, MAP_KEY} from "./constants.mjs";
 export function normalizeFlag(value) {
@@ -90,7 +91,7 @@ export function selectorForKey(key) {
 
 export function numericChange(current, type, value) {
   const n = Number(value);
-  if (!Number.isFinite(n)) throw new Error("Conditional rules require a finite numeric value.");
+  if (!Number.isFinite(n)) throw new Error(sbsI18n("swade-better-effects.UI.Conditionalrulesrequireafinitenumeric_c2e9c02f4f"));
   switch (type) {
     case "add": return current + n;
     case "subtract": return current - n;
@@ -98,13 +99,13 @@ export function numericChange(current, type, value) {
     case "override": return n;
     case "upgrade": return Math.max(current, n);
     case "downgrade": return Math.min(current, n);
-    default: throw new Error(`Unsupported conditional operation: ${type}`);
+    default: throw new Error(sbsI18n("swade-better-effects.UI.Unsupportedconditionaloperation_f2c8193420", {p0: (type)}));
   }
 }
 
 export function resolveMapPenalty({penalty, context = {}, rules = []}) {
   let value = Math.abs(Number(penalty));
-  if (!Number.isFinite(value)) throw new Error("MAP must be a finite number.");
+  if (!Number.isFinite(value)) throw new Error(sbsI18n("swade-better-effects.UI.MAPmustbeafinitenumber_95bb348a4c"));
   const applied = [];
   // Choosing no multi-action penalty must never become a bonus or a penalty.
   if (!value) return {penalty: 0, applied};
@@ -113,8 +114,8 @@ export function resolveMapPenalty({penalty, context = {}, rules = []}) {
     if (rule.selector !== "map" || !testPredicate(rule.predicate ?? emptyPredicate(), {...context, actor: rule.ownerFlags ?? []})) continue;
     const before = value;
     value = numericChange(value, rule.type ?? "add", rule.value);
-    if (!Number.isFinite(value)) throw new Error("A MAP change produced a non-finite result.");
-    applied.push({label: rule.label ?? "Modify MAP", before, after: value});
+    if (!Number.isFinite(value)) throw new Error(sbsI18n("swade-better-effects.UI.AMAPchangeproducedanon_13f766e13c"));
+    applied.push({label: rule.label ?? sbsI18n("swade-better-effects.UI.ModifyMAP_d26f345a84"), before, after: value});
   }
   return {penalty: value > 0 ? -value : 0, applied};
 }
@@ -134,7 +135,7 @@ export function* matchingDamageRules({context = {}, attackerRules = [], defender
       || (a.priority ?? defaults[a.type] ?? 20) - (b.priority ?? defaults[b.type] ?? 20));
   for (const rule of rules) {
     const incomingAP = rule.side === "defender" && rule.selector === "target-roll:ap";
-    if (rule.side === "defender" && ["target-roll:damage", "target-roll:targetDamage"].includes(rule.selector)) rule.selector = "incoming-damage";
+    if (rule.side === "defender" && ["target-roll:damage", sbsI18n("swade-better-effects.UI.targetrolltargetDamage_c77b3aa462")].includes(rule.selector)) rule.selector = "incoming-damage";
     if (rule.side === "defender" && rule.selector === "target-roll:ap") rule.selector = "ap";
     if (rule.side === "defender" && rule.selector === "ap" && !incomingAP) continue;
     if (rule.side === "attacker" && !["outgoing-damage", "ap"].includes(rule.selector)) continue;
@@ -150,7 +151,7 @@ export function* matchingDamageRules({context = {}, attackerRules = [], defender
 
 export function resolveDamage({damage, ap = 0, toughness, armor = 0, skipUnrolled = false, ...rules}) {
   const values = {damage: Number(damage), ap: Number(ap), toughness: Number(toughness), armor: Number(armor)};
-  if (!Object.values(values).every(Number.isFinite)) throw new Error("Damage and defenses must be finite numbers.");
+  if (!Object.values(values).every(Number.isFinite)) throw new Error(sbsI18n("swade-better-effects.UI.Damageanddefensesmustbefinite_e620d153bf"));
   const applied = [];
   let immunity;
   for (const rule of matchingDamageRules(rules)) {
@@ -159,12 +160,12 @@ export function resolveDamage({damage, ap = 0, toughness, armor = 0, skipUnrolle
     if (!(key in values) || (skipUnrolled && key === "damage" && !Number.isFinite(Number(rule.value)))) continue;
     const before = values[key];
     values[key] = rule.selector === "immunity" ? 0 : numericChange(before, rule.type ?? "add", rule.value);
-    if (rule.selector === "immunity") immunity ??= rule.label || "Immunity";
-    if (!Number.isFinite(values[key])) throw new Error("A conditional rule produced a non-finite result.");
+    if (rule.selector === "immunity") immunity ??= rule.label || sbsI18n("swade-better-effects.UI.Immunity_806f8b53f4");
+    if (!Number.isFinite(values[key])) throw new Error(sbsI18n("swade-better-effects.UI.Aconditionalruleproducedanon_1a4b1f7914"));
     if (key === "armor") values.armor = Math.max(0, values.armor);
     // Armor is part of total Toughness, so conditional armor changes both values.
     if (key === "armor") values.toughness += values.armor - before;
-    const change = {label: rule.label ?? "Conditional effect", selector: rule.selector, before, after: values[key]};
+    const change = {label: rule.label ?? sbsI18n("swade-better-effects.UI.Conditionaleffect_61fd3d5eef"), selector: rule.selector, before, after: values[key]};
     if (key === "damage") Object.assign(change, {type: rule.type ?? "add", rolledValue: Number(rule.value)});
     if (rule.formula) change.formula = rule.formula;
     if (rule.breakdown) change.breakdown = rule.breakdown;
@@ -187,7 +188,7 @@ export function resolveTrait({context, attackerRules = [], defenderRules = []}) 
     || kind === "targetAttack" && rollFlags.includes("attack")
     || kind === "targetAttackRanged" && rollFlags.includes("attack") && rollFlags.includes("ranged")
     || kind === "targetAttackMelee" && rollFlags.includes("attack") && rollFlags.includes("melee")
-    || ["gangUpAttack", "gangUpDefend"].includes(kind) && rollFlags.includes("gang-up");
+    || [sbsI18n("swade-better-effects.UI.gangUpAttack_9d89bd6160"), sbsI18n("swade-better-effects.UI.gangUpDefend_d7d7ef8376")].includes(kind) && rollFlags.includes("gang-up");
   const priority = {multiply: 10, add: 20, subtract: 20, downgrade: 30, upgrade: 40, override: 50};
   for (const [side, rules] of [["attacker", attackerRules], ["defender", defenderRules]]) {
     for (const rule of [...rules].sort((a,b) => (a.priority ?? priority[a.type] ?? 20) - (b.priority ?? priority[b.type] ?? 20))) {

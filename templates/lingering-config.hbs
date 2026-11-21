@@ -1,26 +1,36 @@
-<label class="checkbox"><input type="checkbox" name="enabled" {{checked config.enabled}}> Lingering</label>
-<fieldset class="sbe-lingering-options">
-  <label>Request roll
+<label class="checkbox"><input type="checkbox" name="enabled" {{checked config.enabled}}> {{localize "swade-better-effects.UI.Lingering_3481546dac"}}</label>
+<fieldset class="sbe-lingering-options" {{#unless config.enabled}}disabled inert aria-disabled="true"{{/unless}}>
+  <div class="sbe-lingering-timing"><label>{{localize "swade-better-effects.UI.Requestroll_b4fbd7b1e0"}}
     <select name="timing">
-      <option value="end" {{#unless start}}selected{{/unless}}>End of turn</option>
-      <option value="start" {{#if start}}selected{{/if}}>Start of turn</option>
+      <option value="end" {{#unless start}}selected{{/unless}}>{{localize "swade-better-effects.UI.Endofturn_91c7a839a9"}}</option>
+      <option value="start" {{#if start}}selected{{/if}}>{{localize "swade-better-effects.UI.Startofturn_c4c66e70da"}}</option>
     </select>
   </label>
+  <label class="checkbox"><input type="checkbox" name="followingTurns" {{checked config.followingTurns}}> {{localize "swade-better-effects.UI.Followingturns_316149f84b"}}</label></div>
   <div class="sbe-lingering-trait">
-    <label>Trait
-      <input type="text" name="trait" list="sbe-lingering-traits" value="{{config.trait}}" placeholder="Skill or attribute">
+    <label>{{localize "swade-better-effects.UI.Traitorformula_a5535bb7d0"}}
+      <span class="sbe-lingering-trait-input"><button type="button" data-pick-lingering="trait" aria-label="{{localize "swade-better-effects.UI.Choosevictimtrait_0974173a7e"}}" title="{{localize "swade-better-effects.UI.Choosetrait_5e263932b5"}}"><i class="fa-solid fa-list" inert></i></button>
+      <input type="text" name="trait" list="sbe-lingering-traits" value="{{config.trait}}" placeholder="{{localize "swade-better-effects.UI.Skillattributeor1d6x1_f4f2c3675d"}}"></span>
       <datalist id="sbe-lingering-traits">
         {{#each traits}}<option value="{{value}}">{{label}}</option>{{/each}}
       </datalist>
     </label>
-    <label>TN <input type="number" name="tn" value="{{config.tn}}"></label>
-    <label>Successes needed <input type="number" name="required" value="{{config.required}}" min="1" step="1"></label>
+    <label>{{localize "swade-better-effects.UI.Modifier_42e37604b6"}} <input type="number" name="modifier" value="{{config.modifier}}" step="any"></label>
+    <label>{{localize "swade-better-effects.UI.Successesneeded_8eb23cdb59"}} <input type="number" name="required" value="{{config.required}}" min="1" step="1"></label>
+  </div>
+  <div class="sbe-lingering-tn">
+    <label>{{localize "swade-better-effects.UI.TN_57adf80633"}} <select name="tnMode"><option value="value" {{#unless opposed}}selected{{/unless}}>{{localize "swade-better-effects.UI.Value_8e37953d23"}}</option><option value="opposed" {{#if opposed}}selected{{/if}}>{{localize "swade-better-effects.UI.Opposedroll_6e1d1956ac"}}</option></select></label>
+    <label data-tn-value>{{localize "swade-better-effects.UI.Value_8e37953d23"}} <input type="number" name="tn" value="{{config.tn}}" step="any"></label>
+    <label data-tn-opposed>{{localize "swade-better-effects.UI.Sourcetraits_c8dd9a31b8"}}
+      <span class="sbe-lingering-trait-input"><button type="button" data-pick-lingering="opposedTraits" aria-label="{{localize "swade-better-effects.UI.Chooseopposingtrait_b1f914eabd"}}" title="{{localize "swade-better-effects.UI.Choosetrait_5e263932b5"}}"><i class="fa-solid fa-list" inert></i></button>
+      <input type="text" name="opposedTraits" value="{{config.opposedTraits}}" list="sbe-lingering-traits" placeholder="{{localize "swade-better-effects.UI.StrengthAthletics_cb21455c37"}}"></span>
+    </label>
   </div>
   <div class="sbe-lingering-outcomes">
     {{#each rows}}{{{this}}}{{/each}}
   </div>
   <div class="sbe-presets">
-    <button type="button" data-add-outcome="critical">Add Critical Failure</button>
-    <button type="button" data-add-outcome="raise">Add Raise</button>
+    <button type="button" data-add-outcome="critical">{{localize "swade-better-effects.UI.AddCriticalFailure_fcd0b3ea34"}}</button>
+    <button type="button" data-add-outcome="raise">{{localize "swade-better-effects.UI.AddRaise_f6d8e1d6e0"}}</button>
   </div>
 </fieldset>

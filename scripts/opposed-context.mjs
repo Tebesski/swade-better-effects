@@ -1,3 +1,4 @@
+import {t as sbsI18n} from "./i18n.mjs";
 import {normalizeFlags} from "./rules.mjs";
 
 export function withOpposition(context, opposition) {
@@ -8,8 +9,8 @@ export function withOpposition(context, opposition) {
 }
 
 export function opposedResult(total, targetNumber, criticalFailure = false) {
-  if (!Number.isFinite(total) || !Number.isFinite(targetNumber)) throw new Error("Opposed rolls require a finite result and target number.");
-  if (criticalFailure) return {outcome: "Critical failure", raises: 0};
-  if (total < targetNumber) return {outcome: "Failure", raises: 0};
-  return {outcome: "Success", raises: Math.max(0, Math.floor((total - targetNumber) / 4))};
+  if (!Number.isFinite(total) || !Number.isFinite(targetNumber)) throw new Error(sbsI18n("swade-better-effects.UI.Opposedrollsrequireafiniteresult_c324de9ff1"));
+  if (criticalFailure) return {outcome: sbsI18n("swade-better-effects.UI.Criticalfailure_bbdaf0a2a4"), raises: 0};
+  if (total < targetNumber) return {outcome: sbsI18n("swade-better-effects.UI.Failure_7031edbcf9"), raises: 0};
+  return {outcome: sbsI18n("swade-better-effects.UI.Success_c88a0b9074"), raises: Math.max(0, Math.floor((total - targetNumber) / 4))};
 }

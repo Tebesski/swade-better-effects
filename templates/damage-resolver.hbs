@@ -1,10 +1,10 @@
 <section class="standard-form"><h3>{{actor.name}}</h3>
-  <div class="form-group"><label>Rolled damage</label><input type="number" name="damage" value="{{damage}}" min="0" required></div>
-  <div class="form-group"><label>Armor piercing</label><input type="number" name="ap" value="{{ap}}" min="0" required></div>
-  <button type="submit">Recalculate</button>
+  <div class="form-group"><label>{{localize "swade-better-effects.UI.Rolleddamage_d091d80a3f"}}</label><input type="number" name="damage" value="{{damage}}" min="0" required></div>
+  <div class="form-group"><label>{{localize "swade-better-effects.UI.Armorpiercing_3997da7298"}}</label><input type="number" name="ap" value="{{ap}}" min="0" required></div>
+  <button type="submit">{{localize "swade-better-effects.UI.Recalculate_071b975857"}}</button>
   {{> "modules/swade-better-effects/templates/damage-summary.hbs"}}
-  <h3>{{#if remaining}}{{remaining}} wound(s){{else}}{{#if attemptedSoak}}All wounds soaked{{else}}{{result.status}}{{/if}}{{/if}}</h3>
-  {{#if attemptedSoak}}<p>Best soak: {{bestSoak}} wound(s).</p>{{/if}}
-  {{#if canSoak}}<div class="sbe-presets"><button type="button" data-action="bennySoak" {{#unless canSpendBenny}}disabled{{/unless}}>Spend Benny to Soak</button><button type="button" data-action="freeSoak">Free Soak</button></div>{{/if}}
-  <footer class="form-footer"><button type="button" data-action="dismiss">Cancel</button><button type="button" data-action="take">Apply result</button></footer>
+  <h3>{{#if remaining}}{{remaining}} {{localize "swade-better-effects.UI.wounds_65b678126c"}}{{else}}{{#if attemptedSoak}}{{localize "swade-better-effects.UI.Allwoundssoaked_67fab4e097"}}{{else}}{{result.status}}{{/if}}{{/if}}</h3>
+  {{#if attemptedSoak}}<p>{{localize "swade-better-effects.UI.Bestsoak_9f5d007f41"}} {{bestSoak}} {{localize "swade-better-effects.UI.wounds_69b4fc147a"}}</p>{{/if}}
+  {{#if canSoak}}<div class="sbe-presets"><button type="button" data-action="bennySoak" {{#unless canSpendBenny}}disabled{{/unless}}>{{localize "swade-better-effects.UI.SpendBennytoSoak_af89b8b52d"}}</button><button type="button" data-action="freeSoak">{{localize "swade-better-effects.UI.FreeSoak_b125cb89ed"}}</button></div>{{/if}}
+  <footer class="form-footer"><button type="button" data-action="dismiss">{{localize "swade-better-effects.UI.Cancel_19766ed6cc"}}</button><button type="button" data-action="take">{{localize "swade-better-effects.UI.Applyresult_b95268aedc"}}</button></footer>
 </section>

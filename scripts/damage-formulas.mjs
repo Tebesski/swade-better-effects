@@ -1,3 +1,4 @@
+import {t as sbsI18n} from "./i18n.mjs";
 import {MODULE_ID} from "./constants.mjs";
 import {collectEffectRules, collectRules} from "./effects.mjs";
 import {rollTarget} from "./flags.mjs";
@@ -43,7 +44,7 @@ export function sharedDamageRules(context) {
 
 const DIE = /\b(\d*d(\d+))(?:x\d*)?\b/gi;
 function damageLabel(rule) {
-  return String(rule.label || "Conditional damage").replace(/[\[\]]/g, "");
+  return String(rule.label || sbsI18n("swade-better-effects.UI.Conditionaldamage_c2375c504a")).replace(/[\[\]]/g, "");
 }
 function damageDie(die, acing) {
   return die.replace(DIE, (term, base, faces) =>
@@ -112,9 +113,9 @@ export async function snapshotDamageFormulas(message) {
     // Divergent target rules retain their own value for the damage resolver.
     const formula = rule.formula ?? rule.value;
     try {
-      if (!isDamageFormula(formula)) throw new Error("Invalid damage formula.");
+      if (!isDamageFormula(formula)) throw new Error(sbsI18n("swade-better-effects.UI.Invaliddamageformula_54d79895dd"));
       const roll = await new Roll(formula).evaluate({allowInteractive: false});
-      if (!Number.isFinite(roll.total)) throw new Error("Damage formula did not produce a finite total.");
+      if (!Number.isFinite(roll.total)) throw new Error(sbsI18n("swade-better-effects.UI.Damageformuladidnotproducea_4fc590be6c"));
       return {...rule, formula, value: roll.total};
     } catch (error) {
       console.warn(`${MODULE_ID} | Could not roll ${rule.label ?? "conditional damage"}`, error);

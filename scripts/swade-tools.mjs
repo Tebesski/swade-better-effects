@@ -1,7 +1,9 @@
+import {t as sbsI18n} from "./i18n.mjs";
 import {damageFormula, sharedDamageRules} from "./damage-formulas.mjs";
 import {damageRuleKey} from "./rules.mjs";
 import {MODULE_ID} from "./constants.mjs";
-import {actorWithDefense, prepareDamage} from "./damage.mjs";
+import {actorWithDefense, prepareDamage, resolveMessageDamage} from "./damage.mjs";
+import {hasDamageApplications, setToolsApplicationAttackHit} from "./applications.mjs";
 import {wrapMethod} from "./effects.mjs";
 import {damageAP, isDamageMessage, isTraitMessage, makeContext, messageContext, setRollContext, traitAdjustment} from "./roll-context.mjs";
 import {isFlagSuppressed} from "./default-flags.mjs";
@@ -82,6 +84,26 @@ export async function initializeSwadeTools() {
       }
       return returned;
     });
+    setToolsApplicationAttackHit((message, token) => {
+      const tools = message.flags["swade-tools"];
+      if (tools?.rolltype !== "skill" || !tools.itemroll || token.parent !== canvas.scene || !token.object) return;
+      const control = new RollControl(message, null, message.author);
+      control.gmmod = Number(tools.gmmod) || 0;
+      const results = Number(tools.userof) > 1 ? control.roll.terms[0]?.results?.map(entry => entry.result) : [control.roll.total];
+      if (!results?.length) return;
+      for (const [index, total] of results.entries()) control.attackTarget(token.object, total, index + 1);
+      return control.targetPrint.some(entry => /swadetools-term-(?:hit|raise)\b/.test(entry.print));
+    });
+    wrapMethod(RollControl.prototype, "findTargets", async function (original, ...args) {
+      const result = await original(...args);
+      if (this.targetFunction && isDamageMessage(this.chat) && hasDamageApplications(this.chat)) {
+        this.targetFunction = targetId => {
+          const token = canvas.tokens.get(targetId);
+          if (game.user.isGM && token) return resolveMessageDamage(this.chat, {tokens: [token]});
+        };
+      }
+      return result;
+    });
     wrapMethod(RollControl.prototype, "damageTarget", function (original, target, newWounds = null, ...rest) {
       if (newWounds !== null || !target?.actor || !isDamageMessage(this.chat)) return original(target, newWounds, ...rest);
       const actor = target.actor;
@@ -145,6 +167,6 @@ export async function initializeSwadeTools() {
     });
   } catch (error) {
     console.error(`${MODULE_ID} | SWADE Tools integration could not be loaded`, error);
-    ui.notifications.error("Better Effects could not load its SWADE Tools integration. See the browser console for details.");
+    ui.notifications.error(sbsI18n("swade-better-effects.UI.BetterEffectscouldnotloadits_31e39a9ba8"));
   }
 }

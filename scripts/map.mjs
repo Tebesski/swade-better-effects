@@ -1,7 +1,7 @@
 import {wrapMethod} from "./effects.mjs";
 import {messageContext} from "./roll-context.mjs";
-import {normalizeFlags, resolveMapPenalty} from "./rules.mjs";
-import {documentFlags} from "./flags.mjs";
+import {resolveMapPenalty} from "./rules.mjs";
+import {rollTarget} from "./flags.mjs";
 
 export function installMapDialog() {
   const RollDialog = game.swade.RollDialog;
@@ -12,7 +12,7 @@ export function installMapDialog() {
       speaker: this.ctx.speaker, getFlag: () => undefined});
     const targetUuid = context.traitTargetUuid;
     const target = targetUuid ? foundry.utils.fromUuidSync(targetUuid) : null;
-    const targetFlags = normalizeFlags([...documentFlags(target?.actor), ...documentFlags(target)]);
+    const targetFlags = rollTarget(context, target).flags;
     for (const input of this.element.querySelectorAll('input[name="map"]')) {
       const base = Number(input.dataset.sbeMapBase ?? input.value);
       input.dataset.sbeMapBase = String(base);

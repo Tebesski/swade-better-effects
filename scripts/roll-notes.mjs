@@ -1,3 +1,4 @@
+import {t as sbsI18n} from "./i18n.mjs";
 // Use Foundry's sanitizer before enriching user-authored markup.
 export function cleanRollNote(html, {publicContent = false} = {}) {
   const content = document.createElement("div");
@@ -9,7 +10,7 @@ export function cleanRollNote(html, {publicContent = false} = {}) {
 export async function renderRollNotes(message, html, context) {
   if (!context.notes?.length || message.isContentVisible === false) return;
   const section = document.createElement("section"); section.className = "sbe-roll-notes";
-  section.setAttribute("aria-label", "Roll notes"); section.tabIndex = 0;
+  section.setAttribute("aria-label", sbsI18n("swade-better-effects.UI.Rollnotes_6e1215b6ef")); section.tabIndex = 0;
   const actor = context.actorUuid ? foundry.utils.fromUuidSync(context.actorUuid) : null;
   for (const note of context.notes) {
     const enriched = await foundry.applications.ux.TextEditor.implementation.enrichHTML(cleanRollNote(note.html, {publicContent: true}),

@@ -1,14 +1,14 @@
 <section class="standard-form">
-  {{#if multiple}}<div class="form-group"><label for="{{rootId}}-target">Target</label><div class="form-fields"><select id="{{rootId}}-target" name="target" aria-label="Target">{{#each targets}}<option value="{{uuid}}" {{#if (eq uuid ../selected)}}selected{{/if}}>{{name}}</option>{{/each}}</select></div></div>{{else}}<strong>{{name}}</strong>{{/if}}
-  <p class="sbe-opposed-summary">Opposed roll · TN <strong>{{tn}}</strong></p>
-  <input type="search" value="{{query}}" placeholder="Search attributes and skills" aria-label="Search traits" autocomplete="off">
+  {{#if multiple}}<div class="form-group"><label for="{{rootId}}-target">{{localize "swade-better-effects.UI.Target_978354db0c"}}</label><div class="form-fields"><select id="{{rootId}}-target" name="target" aria-label="{{localize "swade-better-effects.UI.Target_978354db0c"}}">{{#each targets}}<option value="{{uuid}}" {{#if (eq uuid ../selected)}}selected{{/if}}>{{name}}</option>{{/each}}</select></div></div>{{else}}<strong>{{name}}</strong>{{/if}}
+  <p class="sbe-opposed-summary">{{localize "swade-better-effects.UI.OpposedrollTN_f4c9cc5cbb"}} <strong>{{tn}}</strong></p>
+  <input type="search" value="{{query}}" placeholder="{{localize "swade-better-effects.UI.Searchattributesandskills_ec09809f7b"}}" aria-label="{{localize "swade-better-effects.UI.Searchtraits_1b6d67400b"}}" autocomplete="off">
   <div class="sbe-trait-groups">
-    <fieldset class="sbe-trait-group" data-trait-group="attributes"><legend>Attributes</legend>
+    <fieldset class="sbe-trait-group" data-trait-group="attributes"><legend>{{localize "swade-better-effects.UI.Attributes_4b0ed88f7d"}}</legend>
       {{#each attributes}}<button type="button" class="sbe-trait-choice" data-action="choose" data-kind="attribute" data-trait="{{key}}" data-name="{{name}}"><span>{{name}}</span><span class="sbe-trait-die">{{die}}</span></button>{{/each}}
     </fieldset>
-    <fieldset class="sbe-trait-group" data-trait-group="skills"><legend>Skills</legend>
+    <fieldset class="sbe-trait-group" data-trait-group="skills"><legend>{{localize "swade-better-effects.UI.Skills_66d0f523a3"}}</legend>
       {{#each skills}}<button type="button" class="sbe-trait-choice" data-action="choose" data-kind="skill" data-trait="{{key}}" data-name="{{name}}"><span>{{name}}</span><span class="sbe-trait-die">{{die}}</span></button>{{/each}}
     </fieldset>
-    <p class="hint sbe-no-traits" hidden>No matching traits.</p>
+    <p class="hint sbe-no-traits" hidden>{{localize "swade-better-effects.UI.Nomatchingtraits_8251b46bf6"}}</p>
   </div>
 </section>

@@ -1,4 +1,4 @@
 <section class="sbe-damage-result"><h3>{{name}}</h3>
-  <p>{{#if fullySoaked}}All wounds soaked.{{else}}{{#if remaining}}{{remaining}} wound(s).{{/if}} {{#if shaken}}Shaken.{{else}}No significant damage.{{/if}}{{/if}}</p>
+  <p>{{#if fullySoaked}}{{localize "swade-better-effects.UI.Allwoundssoaked_83655f0ce0"}}{{else}}{{#if remaining}}{{remaining}} {{localize "swade-better-effects.UI.wounds_69b4fc147a"}}{{/if}} {{#if shaken}}{{localize "swade-better-effects.UI.Shaken_76073b610a"}}{{else}}{{localize "swade-better-effects.UI.Nosignificantdamage_e970edc8d3"}}{{/if}}{{/if}}</p>
   {{> "modules/swade-better-effects/templates/damage-summary.hbs"}}
 </section>

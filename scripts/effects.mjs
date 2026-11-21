@@ -1,4 +1,5 @@
-import {ADD_ITEM_KEY, DEFENSES, EFFECT_TYPE, MAP_KEY, MODULE_ID} from "./constants.mjs";
+import {t as sbsI18n} from "./i18n.mjs";
+import {ADD_ITEM_KEY, APPLICATION_KEY, DEFENSES, EFFECT_TYPE, MAP_KEY, MODULE_ID} from "./constants.mjs";
 import {changeSignature, conditionFor, hasCondition, normalizeFlags, selectorForKey} from "./rules.mjs";
 import {documentFlags} from "./flags.mjs";
 import {MODIFY_FLAG_KEY} from "./flag-changes.mjs";
@@ -65,7 +66,7 @@ export function collectRollNotes(actor, item) {
 export function installConditionGate() {
   wrapMethod(CONFIG.ActiveEffect.documentClass.prototype, "shouldApplyChange", function (original, change, options) {
     if (change.key.startsWith(NOTE_PREFIX) || change.key.startsWith("sbe.targetRoll.") || change.key.startsWith("sbe.powerRoll.") ||
-      [MODIFY_FLAG_KEY, MAP_KEY, ADD_ITEM_KEY].includes(change.key) || Object.hasOwn(DEFENSES, change.key)) return false;
+      [MODIFY_FLAG_KEY, MAP_KEY, ADD_ITEM_KEY, APPLICATION_KEY].includes(change.key) || Object.hasOwn(DEFENSES, change.key)) return false;
     const conditions = this.getFlag(MODULE_ID, "conditions");
     if (!conditions?.length) return original(change, options);
     // A standard-editor reorder must never turn a resistance into an unconditional bonus.
@@ -78,16 +79,16 @@ export function installConditionGate() {
 }
 
 export async function applyEffectTemplate(template, actor) {
-  if (!actor?.isOwner) throw new Error("You need ownership of the target actor to apply effects.");
-  if (template.type !== EFFECT_TYPE) throw new Error("This item is not an Effect template.");
-  if (template.testUserPermission && !template.testUserPermission(game.user, "LIMITED")) throw new Error("You cannot access this Effect template.");
+  if (!actor?.isOwner) throw new Error(sbsI18n("swade-better-effects.UI.Youneedownershipofthetarget_5bbd675b3b"));
+  if (template.type !== EFFECT_TYPE) throw new Error(sbsI18n("swade-better-effects.UI.ThisitemisnotanEffect_e7540def19"));
+  if (template.testUserPermission && !template.testUserPermission(game.user, "LIMITED")) throw new Error(sbsI18n("swade-better-effects.UI.YoucannotaccessthisEffecttemplate_127ad149f5"));
   const effects = template.effects?.contents ?? template.effects ?? [];
-  if (!effects.length) throw new Error("This Effect template is empty. Finish creating it in A.E.G.I.S. first.");
+  if (!effects.length) throw new Error(sbsI18n("swade-better-effects.UI.ThisEffecttemplateisemptyFinish_01e81d3048"));
   const data = effects.map(effect => effectApplicationData(effect, template.uuid ?? template._stats?.compendiumSource ?? null));
   return actor.createEmbeddedDocuments("ActiveEffect", data);
 }
 
-export function effectApplicationData(effect, origin) {
+export function effectApplicationData(effect, origin, binding) {
   const source = effect.toObject ? effect.toObject() : foundry.utils.deepClone(effect);
   for (const key of ["_id", "_stats", "folder", "sort"]) delete source[key];
   source.transfer = false;
@@ -97,14 +98,20 @@ export function effectApplicationData(effect, origin) {
   source.flags ??= {};
   const flags = source.flags[MODULE_ID] = {...source.flags[MODULE_ID], templateUuid: origin};
   delete flags.lingeringState;
+  delete flags.lingeringParent;
+  delete flags.lingeringAppliedTurn;
+  delete flags.lingeringSource;
+  const actor = effect.actor;
+  if (binding) flags.lingeringSource = binding;
+  else if (actor) flags.lingeringSource = {actorUuid: actor.uuid, tokenUuid: actor.token?.uuid ?? null};
   return source;
 }
 
 export async function applyToSelected(template) {
   const actors = [...new Map((canvas.tokens?.controlled ?? []).map(t => [t.actor?.uuid, t.actor])).values()].filter(Boolean);
-  if (!actors.length) return ui.notifications.warn("Select at least one token first.");
+  if (!actors.length) return ui.notifications.warn(sbsI18n("swade-better-effects.UI.Selectatleastonetokenfirst_4050501bd5"));
   for (const actor of actors) await applyEffectTemplate(template, actor);
-  ui.notifications.info(`Applied ${template.name} to ${actors.length} actor(s).`);
+  ui.notifications.info(sbsI18n("swade-better-effects.UI.Appliedtoactors_4a36d27849", {p0: (template.name), p1: (actors.length)}));
 }
 
 export function installSheetDrops() {
@@ -140,6 +147,37 @@ function templateType(data) {
 }
 
 export function registerCanvasDrops() {
+  const replayed = new WeakSet();
+  const applyDrop = (data, item) => {
+    const tokens = canvas.tokens.placeables.filter(t => t.bounds.contains(data.x, data.y) && t.visible).reverse();
+    const token = tokens[0];
+    if (!token) return;
+    return applyEffectTemplate(item, token.actor);
+  };
+  // Claim the DOM drop before another module interprets the item's image as a
+  // tile. Compendium documents may require loading before their type is known.
+  document.addEventListener("drop", event => {
+    if (replayed.has(event) || !canvas.ready || !event.composedPath().includes(canvas.app.view)) return;
+    const data = foundry.applications.ux.TextEditor.implementation.getDragEventData(event);
+    if (data.type !== "Item" || !data.uuid) return;
+    const transfer = new DataTransfer();
+    for (const type of event.dataTransfer.types) {
+      if (type !== "Files") transfer.setData(type, event.dataTransfer.getData(type));
+    }
+    const target = event.target;
+    const options = {bubbles: true, cancelable: true, composed: true, dataTransfer: transfer,
+      clientX: event.clientX, clientY: event.clientY, shiftKey: event.shiftKey, ctrlKey: event.ctrlKey,
+      altKey: event.altKey, metaKey: event.metaKey};
+    const point = canvas.canvasCoordinatesFromClient({x: event.clientX, y: event.clientY});
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void CONFIG.Item.documentClass.fromDropData(data).then(item => {
+      if (item?.type === EFFECT_TYPE) return applyDrop({...data, ...point}, item);
+      const replay = new DragEvent("drop", options);
+      replayed.add(replay);
+      target.dispatchEvent(replay);
+    }).catch(error => ui.notifications.error(error.message));
+  }, {capture: true});
   document.addEventListener("dragstart", event => {
     try {
       const data = JSON.parse(event.dataTransfer.getData("text/plain"));
@@ -148,10 +186,7 @@ export function registerCanvasDrops() {
   });
   Hooks.on("dropCanvasData", (_canvas, data) => {
     if (data.type !== "Item" || !templateType(data)) return;
-    const tokens = canvas.tokens.placeables.filter(t => t.bounds.contains(data.x, data.y) && t.visible).reverse();
-    const token = tokens[0];
-    if (!token) { ui.notifications.warn("Drop the Effect directly onto a token."); return false; }
-    CONFIG.Item.documentClass.fromDropData(data).then(item => applyEffectTemplate(item, token.actor))
+    CONFIG.Item.documentClass.fromDropData(data).then(item => applyDrop(data, item))
       .catch(error => ui.notifications.error(error.message));
     return false;
   });

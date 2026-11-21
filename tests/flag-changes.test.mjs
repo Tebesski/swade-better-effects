@@ -24,6 +24,15 @@ test("Suppress flag hides a flag only while active; Suppress wins over active Ad
   remove.active = false;
   assert.deepEqual(applyFlagChanges(["silver", "elf"], [remove,add]), ["elf", "silver"]);
 });
+test("a single Flag Rules row can add or suppress multiple flags and effects", () => {
+  const poison = effect("venomous", "add", {name: "Poison"});
+  const fatigue = effect("tired", "add", {name: "Fatigue"});
+  const add = effect("Cold Iron, Flaming Blade, cold iron");
+  const suppress = effect("poison, fatigue", "subtract");
+  assert.deepEqual(applyFlagChanges([], [poison, fatigue, add, suppress]), ["cold-iron", "flaming-blade"]);
+  suppress.disabled = true;
+  assert.deepEqual(applyFlagChanges([], [poison, fatigue, add, suppress]), ["cold-iron", "fatigue", "flaming-blade", "poison", "tired", "venomous"]);
+});
 test("suppressed, expired and inactive effects never supply flags", () => {
   assert.deepEqual(applyFlagChanges([], [effect("one", "add", {isSuppressed:true}), effect("two","add",{duration:{expired:true}}), effect("three","add",{active:false})]), []);
 });

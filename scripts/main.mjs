@@ -1,6 +1,7 @@
+import {t as sbsI18n} from "./i18n.mjs";
 import {EFFECT_TYPE, ICON, MODULE_ID, TEMPLATE} from "./constants.mjs";
 import {normalizeFlag, normalizeFlags, testPredicate, resolveDamage, resolveTrait} from "./rules.mjs";
-import {DocumentFlagsEditor, FlagLibrary, documentFlags, injectFlagField, registerFlagHooks} from "./flags.mjs";
+import {DocumentFlagsEditor, FlagLibrary, catalogFlags, documentFlags, injectFlagField, registerFlagHooks} from "./flags.mjs";
 import {EffectItemSheet, editEffectSource, initialTemplateEffect, initializeWizard, injectEditorButtons, openAegis} from "./editors.mjs";
 import {applyEffectTemplate, applyToSelected, collectRules, installConditionGate, installSheetDrops, registerCanvasDrops, wrapMethod} from "./effects.mjs";
 import {makeContext, messageContext, registerRollHooks, tagRoll, traitAdjustment} from "./roll-context.mjs";
@@ -17,6 +18,9 @@ import {installInitiativeChat} from "./initiative-chat.mjs";
 import {registerItemGrants} from "./item-effects.mjs";
 import {registerImmunityNotices} from "./immunity-notices.mjs";
 import {registerLingeringEffects} from "./lingering.mjs";
+import {registerEffectDurations} from "./effect-duration.mjs";
+import {installEffectText} from "./effect-text.mjs";
+import {registerApplications} from "./applications.mjs";
 
 class EffectTemplateData extends foundry.abstract.TypeDataModel {
   static defineSchema() { return {description: new foundry.data.fields.HTMLField()}; }
@@ -27,7 +31,7 @@ Hooks.once("init", () => {
   CONFIG.Item.typeLabels[EFFECT_TYPE] = "TYPES.Item.swade-better-effects.effect";
   CONFIG.Item.typeIcons ??= {}; CONFIG.Item.typeIcons[EFFECT_TYPE] = "fa-solid fa-person-rays";
   foundry.applications.apps.DocumentSheetConfig.registerSheet(CONFIG.Item.documentClass, MODULE_ID, EffectItemSheet,
-    {types: [EFFECT_TYPE], makeDefault: true, label: "Better Effects"});
+    {types: [EFFECT_TYPE], makeDefault: true, label: sbsI18n("swade-better-effects.UI.BetterEffects_1fa2054421")});
   // Some item sheet modules register a default for every item type, including
   // Effect templates. These templates use their own sheet and data model.
   wrapMethod(CONFIG.Item.documentClass.prototype, "_getSheetClass", function (original, ...args) {
@@ -35,16 +39,19 @@ Hooks.once("init", () => {
   });
   game.settings.register(MODULE_ID, "flagLibrary", {scope: "world", config: false, type: Array, default: []});
   registerEffectPicker();
-  game.settings.registerMenu(MODULE_ID, "flags", {name: "Flag library", label: "Manage effect flags", hint: "Create and manage the shared flags used by effects, actors, items, and damage rolls.",
+  game.settings.registerMenu(MODULE_ID, "flags", {name: sbsI18n("swade-better-effects.UI.Flaglibrary_944c5ba1fc"), label: sbsI18n("swade-better-effects.UI.Manageeffectflags_b307b6b6a0"), hint: sbsI18n("swade-better-effects.UI.Createandmanagethesharedflags_1383db8478"),
     icon: "fa-solid fa-tags", type: FlagLibrary, restricted: true});
   CONFIG.queries[`${MODULE_ID}.resolveDamage`] = openDamageRequest;
   registerFlagHooks(); registerRollHooks();
   registerItemGrants();
   registerImmunityNotices();
   installConditionGate();
+  installEffectText();
   installEffectSuppression();
   installRollRequests();
   registerLingeringEffects();
+  registerEffectDurations();
+  registerApplications();
   Hooks.on("preCreateItem", item => {
     if (item.type !== EFFECT_TYPE) return;
     const img = item.img === CONFIG.Item.documentClass.DEFAULT_ICON ? ICON : item.img;
@@ -65,18 +72,19 @@ Hooks.once("setup", async () => {
     if (app.constructor === NativeWizard && app.document?.isOwner) { app.close(); openAegis(app.document); }
   });
   game.modules.get(MODULE_ID).api = Object.freeze({normalizeFlag, normalizeFlags, testPredicate, resolveDamage, collectRules, prepareDamage,
-    openAegis, editEffectSource, applyEffectTemplate, applyToSelected, resolveMessageDamage, tagRoll, getFlags: documentFlags, getRollContext: messageContext, resolveTrait, traitAdjustment,
+    openAegis, editEffectSource, applyEffectTemplate, applyToSelected, resolveMessageDamage, tagRoll, getFlags: documentFlags, catalogFlags, getRollContext: messageContext, resolveTrait, traitAdjustment,
     openFlagLibrary: () => new FlagLibrary().render({force: true}), openOpposedRoll, openRollRequest, openRollRequestLibrary, rollRequestedTrait,
     buildRollRequest, configureRollRequest, generateRollRequest, makeRollContext: makeContext, powerRollModifier, setPowerPreparation, effectCatalog, pickEffect});
-  await foundry.applications.handlebars.loadTemplates([`${TEMPLATE}/damage-summary.hbs`]);
+  await foundry.applications.handlebars.loadTemplates([`${TEMPLATE}/damage-summary.hbs`, `${TEMPLATE}/effect-reference.hbs`]);
 });
 
 Hooks.once("ready", () => Promise.all([initializeTargetedDamage(), initializeSwadeTools()]));
 Hooks.once("ready", () => { if (game.user.isGM && (!game.users.activeGM || game.users.activeGM.id === game.user.id)) migrateRollRequestLibrary().catch(error => ui.notifications.error(error.message, {console: true})); });
 Hooks.on("renderApplicationV2", (app, html) => { injectFlagField(app, html); injectEditorButtons(app, html); });
 Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
-  if (app.document && ["Actor", "Item", "Token", "ActiveEffect", "Scene", "JournalEntry"].includes(app.document.documentName) && app.document.isOwner) {
-    controls.push({action: "sbeFlags", icon: "fa-solid fa-tags", label: "Flags", onClick: () => new DocumentFlagsEditor(app.document).render({force: true})});
+  if (app.document && !(app.document.documentName === "Actor" && app.document.type === "group")
+    && ["Actor", "Item", "Token", "ActiveEffect", "Scene", "JournalEntry"].includes(app.document.documentName) && app.document.isOwner) {
+    controls.push({action: "sbeFlags", icon: "fa-solid fa-tags", label: sbsI18n("swade-better-effects.UI.Flags_f38d9950af"), onClick: () => new DocumentFlagsEditor(app.document).render({force: true})});
   }
 });
 Hooks.on("renderChatMessageHTML", renderDamageMessage);

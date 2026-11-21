@@ -86,7 +86,14 @@
 .sbe-aegis .presets .sbe-change-search { margin-bottom: 8px !important; width: 100%; }
 .sbe-aegis .presets [hidden], .sbe-lingering-dialog [hidden] { display: none !important; }
 .sbe-lingering-options { display: grid; gap: 8px; }
-.sbe-lingering-trait { display: grid; grid-template-columns: 1fr 65px auto; gap: 8px; align-items: end; }
+.sbe-lingering-options:disabled { opacity: .45; filter: grayscale(1); pointer-events: none; }
+.sbe-lingering-timing { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+.sbe-lingering-timing .checkbox { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.sbe-lingering-trait { display: grid; grid-template-columns: minmax(0, 1fr) 75px 110px; gap: 8px; align-items: end; }
+.sbe-lingering-trait-input { display: flex; gap: 4px; min-width: 0; }
+.sbe-lingering-trait-input > button { flex: 0 0 30px; width: 30px; padding: 0; }
+.sbe-lingering-trait-input > input { min-width: 0; flex: 1; }
+.sbe-lingering-tn { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px; align-items: end; }
 .sbe-lingering-options label:not(.checkbox) { display: grid; gap: 3px; }
 .sbe-lingering-outcomes { max-height: min(360px, 45vh); overflow: auto; }
 .sbe-lingering-outcomes details { padding: 5px; }
@@ -96,6 +103,10 @@
 .sbe-outcome-effect-link { min-width: 0; height: auto; overflow-wrap: anywhere; }
 .sbe-outcome-effect-link img { width: 20px; height: 20px; object-fit: contain; }
 .sbe-outcome-effect-hint { font-size: .9em; }
+.sbe-outcome-effect [hidden] { display: none; }
+.sbe-outcome-effect .sbe-remove-with-parent { display: inline-flex; align-items: center; gap: 4px; font-size: .85em; }
+.sbe-outcome-effect .sbe-remove-with-parent[hidden] { display: none; }
+.sbe-application-rule [hidden] { display: none; }
 .sbe-lingering-result p { white-space: pre-wrap; }
 .sbe-lingering-result summary { cursor: var(--cursor-pointer, pointer); }
 .sbe-lingering-result .dice-tooltip { display: block; }
@@ -150,6 +161,7 @@
 .sbe-app .form-fields > .sbe-request-tn-preview { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sbe-request-card h3 { margin: 0 0 5px; }
 .sbe-request-card p { margin: 5px 0; }
+.sbe-request-description { white-space: pre-wrap; overflow-wrap: anywhere; }
 .sbe-request-result { font-weight: bold; margin: 6px 0; }
 .sbe-request-recipients { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; max-height: 180px; overflow: auto; }
 .sbe-request-recipients label { display: flex; align-items: center; gap: 5px; cursor: var(--cursor-pointer, pointer); min-width: 0; }

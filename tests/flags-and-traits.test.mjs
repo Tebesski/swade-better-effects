@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {automaticFlags, effectiveFlags, equipmentFlags, flagInputData, flagsAfterAncestryChange, flagsAfterEquipmentChange, itemGrantsFlags, rollCategoryFlags} from "../scripts/default-flags.mjs";
+import {automaticFlags, effectiveFlags, equipmentFlags, flagInputData, flagsAfterAncestryChange, flagsAfterEquipmentChange, hudActionFlag, itemGrantsFlags, rollCategoryFlags} from "../scripts/default-flags.mjs";
 import {normalizePattern, matchesFlag, testPredicate, resolveTrait, selectorForKey} from "../scripts/rules.mjs";
 const item = (name, type, extra = {}) => ({documentName: "Item", name, type, system: {}, ...extra});
 const actor = items => ({documentName: "Actor", name: "Hero", type: "character", system: {details: {species: {name: "Elf"}}}, isWildcard: true, items});
@@ -37,6 +37,38 @@ test("each equipment state supplies exactly one flag to its item and none to its
     assert.deepEqual(effectiveFlags(sword), [flag,"sword"].sort());
     assert.deepEqual(effectiveFlags(hero), ["elf"]);
   }
+});
+test("powers derive flags from the current comma-separated Trappings field", () => {
+  const power = item("Bolt", "power", {system: {arcane: "Spellcasting", trapping: " Côld Iron, Blue Fire, blue fire "}});
+  assert.deepEqual(effectiveFlags(power), ["bolt", "spellcasting", "trapping-blue-fire", "trapping-cold-iron"]);
+  power.system.trapping = "Lightning";
+  assert.deepEqual(effectiveFlags(power), ["bolt", "spellcasting", "trapping-lightning"]);
+  power.flags = {"swade-better-effects": flagInputData(power, "bolt, spellcasting")};
+  assert.deepEqual(effectiveFlags(power), ["bolt", "spellcasting"]);
+  assert.deepEqual(effectiveFlags(item("Bolt", "weapon", {system: {trapping: "Fire"}})), ["bolt"]);
+});
+test("action card flags use the rolling token or its group leader and follow redraws", () => {
+  const hero = actor([]);
+  const combatant = {initiative: 13.4, cardValue: 13, cardString: "K♠"};
+  const token = {combatant};
+  hero.getCombatant = () => ({initiative: 9.1, cardValue: 9, cardString: "9♣"});
+  assert.deepEqual(effectiveFlags(hero), ["card-9", "card-number", "elf"]);
+  assert.deepEqual(effectiveFlags(hero, token), ["card-face", "card-king", "elf"]);
+  combatant.groupLeader = {initiative: 14.3, cardValue: 14, cardString: "A♥"};
+  assert.deepEqual(effectiveFlags(hero, token), ["card-ace", "elf"]);
+  combatant.groupLeader = {initiative: 98, cardValue: 98, cardString: "Blk J", hasJoker: true};
+  assert.deepEqual(effectiveFlags(hero, token), ["card-black-joker", "card-joker", "elf"]);
+  assert.deepEqual(effectiveFlags(hero, {combatant: {initiative: 7, cardValue: 7, cardString: ""}}), ["elf"]);
+  assert.deepEqual(effectiveFlags(hero, {combatant: {initiative: null, cardValue: 13, cardString: "K♠"}}), ["elf"]);
+  assert.deepEqual(effectiveFlags(hero, {combatant: null}), ["elf"]);
+});
+test("HUD actions use action identifiers for Support and Tests", () => {
+  const action = (module, actionKind, name = "") => item(name, "action", {flags: {[module]: {actionKind}}});
+  assert.equal(hudActionFlag(action("swade-hud", "support")), "support");
+  assert.equal(hudActionFlag(action("swade-better-setting", "test")), "test");
+  assert.equal(hudActionFlag(action("swade-hud", "intimidation"), true), "test");
+  assert.equal(hudActionFlag(action("swade-hud", "intimidation"), false), undefined);
+  assert.equal(hudActionFlag(item("Test", "skill")), undefined);
 });
 test("actors automatically receive ancestry and current Size without inheriting item flags", () => {
   const hero = actor([item("Dodge", "edge"), item("High Elf", "ancestry")]);

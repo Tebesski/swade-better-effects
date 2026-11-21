@@ -1,0 +1,8 @@
+<div class="sbe-outcome-effect" role="group" aria-label="{{localize "swade-better-effects.UI.Applyeffect_4b92049abb"}}">
+  <strong>{{localize "swade-better-effects.UI.Applyeffect_4b92049abb"}}</strong>
+  <input type="hidden" data-field="effect" value="{{effectUuid}}">
+  <span class="sbe-outcome-effect-hint">{{localize "swade-better-effects.UI.Dropaneffectoranitem_a0378c9b24"}}</span>
+  <button type="button" class="sbe-outcome-effect-link" hidden><img alt=""><span></span></button>
+  <button type="button" class="sbe-outcome-effect-clear" aria-label="{{localize "swade-better-effects.UI.Cleareffect_6046380ef9"}}" hidden><i class="fa-solid fa-xmark" inert></i></button>
+  {{#if lingering}}<label class="checkbox sbe-remove-with-parent" hidden><input type="checkbox" data-field="removeWithParent" {{checked removeWithParent}}> {{localize "swade-better-effects.UI.RemovewithLingeringEffect_0080621975"}}</label>{{/if}}
+</div>
