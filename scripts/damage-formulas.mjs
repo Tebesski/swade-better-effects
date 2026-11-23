@@ -8,7 +8,7 @@ export function damageRulesForTarget(context, actor, token) {
   const {item, flags: target} = rollTarget(context, token, actor);
   const resolvedContext = {...context, hasRoll: true, target};
   const defenderRules = item ? collectEffectRules(item.effects, target)
-    : collectRules(actor).map(rule => ({...rule, ownerFlags: target}));
+    : collectRules(actor, undefined, target);
   globalThis.Hooks?.callAll("swadeBetterEffectsDamageRules", resolvedContext, actor, token, item, defenderRules);
   return {context: resolvedContext, attackerRules: context.attackerRules ?? [], defenderRules};
 }

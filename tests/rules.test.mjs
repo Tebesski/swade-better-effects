@@ -1,10 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {normalizeFlag, normalizeFlags, validatePredicate, testPredicate, emptyPredicate, changeSignature, conditionFor, resolveDamage, calculateWounds} from "../scripts/rules.mjs";
+import {normalizeFlag, normalizeFlags, validatePredicate, testPredicate, emptyPredicate, changeSignature, conditionFor, resolveDamage, calculateWounds, isOwnerCondition} from "../scripts/rules.mjs";
 
 const flag = (name, source = "roll") => ({op: "flag", source, flag: name});
 const rule = (selector, value, predicate = emptyPredicate(), type = "add", extra = {}) => ({selector, type, value, predicate, ...extra});
 const resolve = extra => resolveDamage({damage: 12, toughness: 6, armor: 2, ap: 0, context: {hasRoll: true, roll: ["fire"], target: [], attacker: [], item: []}, ...extra});
+
+test("owner-only Armor conditions prepare normally; roll-dependent and virtual rules remain deferred", () => {
+  const change = {key: "system.stats.toughness.armor"};
+  const predicate = {op: "all", children: [{op: "not", child: flag("armour-in-earth-invulnerable", "actor")}]};
+  assert.equal(isOwnerCondition(change, predicate), true);
+  assert.equal(testPredicate(predicate, {actor: []}), true);
+  assert.equal(testPredicate(predicate, {actor: ["armour-in-earth-invulnerable"]}), false);
+  assert.equal(isOwnerCondition(change, {...predicate, children: [...predicate.children, flag("fire")]}), false);
+  assert.equal(isOwnerCondition({key: "sbe.targetRoll.attack"}, predicate), false);
+  assert.equal(isOwnerCondition(change, emptyPredicate()), false);
+});
 
 test("flags normalize accents, punctuation and duplicate entries", () => {
   assert.equal(normalizeFlag("  Cold  Iron!! "), "cold-iron");

@@ -8,11 +8,21 @@ const opposition = {targetNumber: 9, flags: ["trait", "attack", "grapple", "mele
 const againstGrapple = {op: "flag", source: "roll", flag: "grapple"};
 const rule = (selector, value = 1, predicate = againstGrapple) => ({selector, value, type: "add", label: "Grapple training", predicate});
 
+test("Blind's conditional Vigor modifier applies to fixed and opposed lingering recovery rolls", () => {
+  const modifier = rule(selectorForKey("system.attributes.vigor.die.modifier"), -2, {op: "flag", source: "roll", flag: "blind"});
+  for (const mode of ["shake-off", "opposed-roll"]) {
+    const context = {hasRoll: true, roll: ["trait", "attribute", "vigor", "blind", mode], attribute: "vigor", skill: null};
+    assert.equal(resolveTrait({context, attackerRules: [modifier]}).value, -2);
+    assert.equal(resolveTrait({context: {...context, roll: ["trait", mode]}, attackerRules: [modifier]}).value, 0);
+  }
+});
+
 test("opposition carries original flags and the original opponent without mutating either roll", () => {
   const before = structuredClone(response), original = structuredClone(opposition);
   const result = withOpposition(response, opposition);
   assert.ok(result.roll.includes("grapple")); assert.ok(result.roll.includes("athletics"));
   assert.ok(result.rollKinds.includes("opposed")); assert.ok(!result.rollKinds.includes("attack"));
+  assert.ok(result.rollKinds.includes("opposed-roll")); assert.ok(result.roll.includes("opposed-roll"));
   assert.deepEqual(result.targetUuids, ["Scene.a.Token.b"]);
   assert.deepEqual(result.opposed, ["attack", "grapple", "melee", "trait"]);
   assert.deepEqual(response, before); assert.deepEqual(opposition, original);

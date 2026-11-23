@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {mergeRequestPresets, traitName, traitRequest, validateRequest} from "../scripts/request-data.mjs";
+import {lingeringRollFlags, mergeRequestPresets, traitName, traitRequest, validateRequest} from "../scripts/request-data.mjs";
 const attributes = [{key: "agility", name: "Agility"}, {key: "spirit", name: "Spirit"}];
+
+test("lingering rolls retain effect flags and identify fixed and opposed TNs", () => {
+  assert.deepEqual(lingeringRollFlags(["blind"]), ["blind", "shake-off"]);
+  assert.deepEqual(lingeringRollFlags(["blind"], true), ["blind", "opposed-roll"]);
+});
 test("lingering request modifiers keep their sign independently of legacy penalties", () => {
   for (const modifier of [-3, 0, 2, 1.5]) {
     const request = traitRequest({trait: "Vigor", modifier}, attributes);

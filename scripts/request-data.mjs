@@ -3,6 +3,8 @@ import {normalizeFlags} from "./rules.mjs";
 
 export const traitName = value => String(value ?? "").normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase();
 
+export const lingeringRollFlags = (flags, opposed = false) => normalizeFlags([...normalizeFlags(flags), opposed ? "opposed-roll" : "shake-off"]);
+
 export function traitRequest({trait, tn = 4, penalty = 0, modifier = 0, flags = [], kind, attribute, description}, attributes, untrainedNames = []) {
   const name = String(trait ?? "").trim();
   if (!name) throw new Error(sbsI18n("swade-better-effects.UI.EnteraskillattributeorUntrained_aaffcc3fec"));

@@ -52,7 +52,7 @@ export async function rollLingeringOpposition(effect, config, victimToken) {
   if (!source) return null;
   const {actor, token} = source;
   const names = [...new Set(config.opposedTraits.split(",").map(name => name.trim()).filter(Boolean))];
-  const flags = [...documentFlags(effect), "opposed"];
+  const flags = [...documentFlags(effect), "opposed", "opposed-roll"];
   let best;
   for (const name of names) {
     const request = buildRollRequest({trait: name});

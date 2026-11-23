@@ -1,7 +1,7 @@
 import {t as sbsI18n} from "./i18n.mjs";
 export const TARGET_ROLL_PREFIX = "sbe.targetRoll.";
 import {MODIFY_FLAG_KEY} from "./flag-changes.mjs";
-import {ADD_ITEM_KEY, APPLICATION_KEY, DEFENSES, MAP_KEY} from "./constants.mjs";
+import {ADD_ITEM_KEY, APPLICATION_KEY, DEFENSES, MAP_KEY, RESTRICT_KEY, SUPPRESS_KEY} from "./constants.mjs";
 export const globalKind = key => key.startsWith(TARGET_ROLL_PREFIX) ? key.slice(TARGET_ROLL_PREFIX.length)
   : key.startsWith("system.stats.globalMods.") ? key.slice("system.stats.globalMods.".length) : null;
 
@@ -25,12 +25,14 @@ export function changeGroups(context) {
   const targeting = group("targeting", sbsI18n("swade-better-effects.UI.Modifytargetingroll_b0d6bac9c2"), globals.map(p => ({...p, key: `${TARGET_ROLL_PREFIX}${globalKind(p.key)}`})));
   other.push(targeting);
   const better = [
+    group("restrict", sbsI18n("swade-better-effects.UI.Restrict"), [{key: RESTRICT_KEY, label: sbsI18n("swade-better-effects.UI.Restrict")}]),
     group("power-roll", sbsI18n("swade-better-effects.UI.NoPowerPoints_fbaa49cd57"), [
       {key: "sbe.powerRoll.power-preparation", label: sbsI18n("swade-better-effects.UI.PowerPreparation_956c4a395e")},
       {key: "sbe.powerRoll.power-maintain", label: sbsI18n("swade-better-effects.UI.PowerMaintenance_d9ef080536")}
     ]),
     group("map", sbsI18n("swade-better-effects.UI.MAPmodifier_c7c1a300b8"), [{key: MAP_KEY, label: sbsI18n("swade-better-effects.UI.MAPmodifier_c7c1a300b8")}]),
     group("flag", sbsI18n("swade-better-effects.UI.FlagRules_c7616a59e0"), [{key: MODIFY_FLAG_KEY, label: sbsI18n("swade-better-effects.UI.FlagRules_c7616a59e0")}]),
+    group("suppress", sbsI18n("swade-better-effects.UI.Suppress_60b199879b"), [{key: SUPPRESS_KEY, label: sbsI18n("swade-better-effects.UI.Suppress_60b199879b")}]),
     ...Object.entries(DEFENSES).map(([key, {selector, label}]) => group(selector, label, [{key, label}])),
     group("add-item", sbsI18n("swade-better-effects.UI.AddItem_054bcbbe57"), [{key: ADD_ITEM_KEY, label: sbsI18n("swade-better-effects.UI.AddItem_054bcbbe57")}]),
     group("application", sbsI18n("swade-better-effects.UI.Application_e7ad522ea3"), [{key: APPLICATION_KEY, label: sbsI18n("swade-better-effects.UI.Application_e7ad522ea3")}])

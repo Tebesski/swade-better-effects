@@ -1,8 +1,8 @@
 import {t as sbsI18n} from "./i18n.mjs";
-import {ADD_ITEM_KEY, APPLICATION_KEY, DEFENSES, EFFECT_TYPE, MAP_KEY, MODULE_ID} from "./constants.mjs";
-import {changeSignature, conditionFor, hasCondition, normalizeFlags, selectorForKey} from "./rules.mjs";
+import {ADD_ITEM_KEY, APPLICATION_KEY, DEFENSES, EFFECT_TYPE, MAP_KEY, MODULE_ID, RESTRICT_KEY, SUPPRESS_KEY} from "./constants.mjs";
+import {changeSignature, conditionFor, customChangeName, hasCondition, isOwnerCondition, normalizeFlags, selectorForKey, testPredicate} from "./rules.mjs";
 import {documentFlags} from "./flags.mjs";
-import {MODIFY_FLAG_KEY} from "./flag-changes.mjs";
+import {MODIFY_FLAG_KEY, withSuppressionScope} from "./flag-changes.mjs";
 import {NOTE_PREFIX, noteBaseKey, noteSelectorForKey} from "./note-rules.mjs";
 
 export function conditionsValid(effect) {
@@ -12,29 +12,62 @@ export function conditionsValid(effect) {
   return conditions.every((entry, index) => !hasCondition(entry?.predicate) || entry.signature === changeSignature(changes[index] ?? {}));
 }
 
-export function collectRules(actor, item) {
-  if (!actor) return [];
-  const effects = [...actor.allApplicableEffects()];
-  if (item) effects.push(...item.effects.filter(e => !e.transfer));
-  return collectEffectRules(effects, documentFlags(actor));
+function collectChanges(effects, ownerFlags, {rules, notes}) {
+  for (const effect of effects) {
+    const flags = effect.flags[MODULE_ID] ?? {};
+    const changes = effect._source.system.changes;
+    // Ignore ordinary native effects before asking Foundry whether they're active.
+    const legacy = rules && flags.rules?.length;
+    if (!legacy && !(rules && flags.conditions?.some?.(entry => hasCondition(entry?.predicate)))
+      && !changes.some(({key}) => (notes && key.startsWith(NOTE_PREFIX)) || (rules && isVirtualRollChange(key)))) continue;
+    if (!effect.active) continue;
+    if (legacy) for (const rule of flags.rules) rules.push({...structuredClone(rule), ownerFlags: ownerFlags(), label: rule.label || effect.name});
+    if (!conditionsValid(effect)) continue;
+    const conditions = flags.conditions;
+    for (const [index, change] of changes.entries()) {
+      if (notes && change.key.startsWith(NOTE_PREFIX)) {
+        const selector = noteSelectorForKey(noteBaseKey(change.key) ?? "");
+        if (selector) notes.push({id: `${effect.uuid}:${index}`, selector, label: customChangeName(change, index, conditions) || effect.name,
+          html: String(change.value ?? ""), ownerFlags: ownerFlags(), predicate: structuredClone(conditionFor(change, index, conditions) ?? {op: "all", children: []})});
+        continue;
+      }
+      if (!rules) continue;
+      const predicate = conditionFor(change, index, conditions);
+      if (!hasCondition(predicate) && !isVirtualRollChange(change.key)) continue;
+      if (isOwnerCondition(change, predicate)) continue;
+      const selector = selectorForKey(change.key);
+      if (selector) rules.push({selector, predicate: structuredClone(predicate ?? {op: "all", children: []}), type: change.type, value: change.value,
+        priority: change.priority ?? undefined, label: customChangeName(change, index, conditions) || effect.name, ownerFlags: ownerFlags()});
+    }
+  }
+}
+
+function isVirtualRollChange(key) {
+  return key.startsWith("sbe.targetRoll.") || key.startsWith("sbe.powerRoll.") || key === MAP_KEY || Object.hasOwn(DEFENSES, key);
+}
+
+function collectActorChanges(actor, item, flags, result) {
+  if (!actor) return result;
+  return withSuppressionScope(actor, () => {
+    const effects = new Set(actor.allApplicableEffects());
+    for (const effect of item?.effects ?? []) if (!effect.transfer) effects.add(effect);
+    collectChanges(effects, () => flags ??= documentFlags(actor), result);
+    return result;
+  });
+}
+
+export function collectRules(actor, item, ownerFlags) {
+  return collectActorChanges(actor, item, ownerFlags, {rules: []}).rules;
 }
 
 export function collectEffectRules(effects, ownerFlags) {
-  const result = [];
-  for (const effect of effects) {
-    if (!effect.active) continue;
-    const flags = effect.flags[MODULE_ID] ?? {};
-    for (const rule of flags.rules ?? []) result.push({...structuredClone(rule), ownerFlags, label: rule.label || effect.name});
-    if (!conditionsValid(effect)) continue;
-    const changes = effect._source.system.changes;
-    for (const [index, change] of changes.entries()) {
-      const predicate = conditionFor(change, index, flags.conditions);
-      const selector = selectorForKey(change.key);
-      if (selector && (hasCondition(predicate) || change.key.startsWith("sbe.targetRoll.") || change.key === MAP_KEY || Object.hasOwn(DEFENSES, change.key) || selector.startsWith("power-roll:"))) result.push({selector, predicate: structuredClone(predicate ?? {op: "all", children: []}), type: change.type, value: change.value,
-        priority: change.priority ?? undefined, label: effect.name, ownerFlags});
-    }
-  }
-  return result;
+  const rules = [];
+  collectChanges(effects, () => ownerFlags, {rules});
+  return rules;
+}
+
+export function collectRollEffects(actor, item, ownerFlags) {
+  return collectActorChanges(actor, item, ownerFlags, {rules: [], notes: []});
 }
 
 export function wrapMethod(object, name, wrapper) {
@@ -45,35 +78,39 @@ export function wrapMethod(object, name, wrapper) {
   object[name] = replacement;
 }
 
-export function collectRollNotes(actor, item) {
-  if (!actor) return [];
-  const effects = new Set(actor.allApplicableEffects());
-  if (item) for (const effect of item.effects) if (!effect.transfer) effects.add(effect);
-  const notes = [];
-  for (const effect of effects) {
-    if (!effect.active || !conditionsValid(effect)) continue;
-    const conditions = effect.getFlag(MODULE_ID, "conditions") ?? [];
-    for (const [index, change] of effect._source.system.changes.entries()) {
-      if (!change.key.startsWith(NOTE_PREFIX)) continue;
-      const selector = noteSelectorForKey(noteBaseKey(change.key) ?? "");
-      if (selector) notes.push({id: `${effect.uuid}:${index}`, selector, label: effect.name, html: String(change.value ?? ""),
-        ownerFlags: documentFlags(actor), predicate: structuredClone(conditionFor(change, index, conditions) ?? {op: "all", children: []})});
-    }
-  }
-  return notes;
+export function collectRollNotes(actor, item, ownerFlags) {
+  return collectActorChanges(actor, item, ownerFlags, {notes: []}).notes;
 }
 
 export function installConditionGate() {
+  wrapMethod(CONFIG.ActiveEffect.documentClass, "_updateTraitRollEffects", function (original, entries, change, ...args) {
+    const result = original(entries, change, ...args);
+    const effect = change.effect;
+    const conditions = effect.getFlag(MODULE_ID, "conditions");
+    if (!conditions?.some?.(entry => entry?.customName)) return result;
+    // Foundry fills in the effective priority on the prepared change.
+    const changes = effect._source.system.changes;
+    const index = changes.findIndex(row => changeSignature(row) === changeSignature({...change, priority: row.priority ?? null}));
+    const name = index < 0 ? "" : customChangeName(changes[index], index, conditions);
+    if (name) {
+      const entry = entries.find(row => row.effectID === effect.id);
+      if (entry) entry.label = name;
+    }
+    return result;
+  });
   wrapMethod(CONFIG.ActiveEffect.documentClass.prototype, "shouldApplyChange", function (original, change, options) {
     if (change.key.startsWith(NOTE_PREFIX) || change.key.startsWith("sbe.targetRoll.") || change.key.startsWith("sbe.powerRoll.") ||
-      [MODIFY_FLAG_KEY, MAP_KEY, ADD_ITEM_KEY, APPLICATION_KEY].includes(change.key) || Object.hasOwn(DEFENSES, change.key)) return false;
+      [MODIFY_FLAG_KEY, MAP_KEY, ADD_ITEM_KEY, APPLICATION_KEY, RESTRICT_KEY, SUPPRESS_KEY].includes(change.key) || Object.hasOwn(DEFENSES, change.key)) return false;
     const conditions = this.getFlag(MODULE_ID, "conditions");
     if (!conditions?.length) return original(change, options);
     // A standard-editor reorder must never turn a resistance into an unconditional bonus.
     if (!conditionsValid(this)) return false;
     const index = this.system.changes.indexOf(change);
     const predicate = conditions[index]?.predicate;
-    if (hasCondition(predicate)) return false;
+    if (hasCondition(predicate)) {
+      if (!isOwnerCondition(change, predicate) || !this.actor) return false;
+      if (!testPredicate(predicate, {actor: documentFlags(this.actor)})) return false;
+    }
     return original(change, options);
   });
 }

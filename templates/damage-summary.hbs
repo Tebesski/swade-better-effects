@@ -2,6 +2,8 @@
   <h4>{{localize "swade-better-effects.UI.Conditionaleffects_e9c5b0d7ea"}}</h4>
   <p>{{localize "swade-better-effects.UI.Damage_0c874f581a"}} <strong>{{sbe.damage}}</strong> {{localize "swade-better-effects.UI.AP_5a0d4a3cdb"}} <strong>{{sbe.ap}}</strong> {{localize "swade-better-effects.UI.Toughness_735feddd4f"}} <strong>{{sbe.toughness}}</strong> ({{sbe.armor}} {{localize "swade-better-effects.UI.armor_20b8dcbee4"}}</p>
   {{#if sbe.immunity}}<p>{{sbe.immunity}}</p>{{/if}}
-  <div class="sbe-roll-flags">{{#each sbe.flags}}<span class="sbe-flag">{{this}}</span>{{else}}<span class="hint">{{localize "swade-better-effects.UI.Norollflags_301d34a00a"}}</span>{{/each}}</div>
+  <details class="sbe-damage-flags"><summary>{{localize "swade-better-effects.UI.BetterEffectsflags_3bb5f82be2"}}</summary>
+    <div class="sbe-roll-flags">{{#each sbe.flags}}<span class="sbe-flag">{{this}}</span>{{else}}<span class="hint">{{localize "swade-better-effects.UI.Norollflags_301d34a00a"}}</span>{{/each}}</div>
+  </details>
   {{#each sbe.applied}}<p class="hint">{{label}} — {{selector}}: {{before}} → {{after}}{{#if formula}} ({{formula}} = {{rolledValue}}){{/if}}</p>{{else}}<p class="hint">{{localize "swade-better-effects.UI.Noconditionalmodifiersmatched_cf695565fc"}}</p>{{/each}}
 </section>

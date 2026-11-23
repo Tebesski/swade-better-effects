@@ -3,6 +3,8 @@ export const MODULE_ID = "swade-better-effects";
 export const MAP_KEY = "sbe.map";
 export const ADD_ITEM_KEY = "sbe.addItem";
 export const APPLICATION_KEY = "sbe.application";
+export const SUPPRESS_KEY = "sbe.suppress";
+export const RESTRICT_KEY = "sbe.restrict";
 export const DEFENSES = {
   "sbe.weakness": {selector: "weakness", get label() { return sbsI18n("swade-better-effects.UI.Weakness_f3e0689e79"); }, type: "add"},
   "sbe.resistance": {selector: "resistance", get label() { return sbsI18n("swade-better-effects.UI.Resistance_c35070bce1"); }, type: "subtract"},

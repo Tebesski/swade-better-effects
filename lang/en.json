@@ -418,7 +418,7 @@
       "NoStrongShakeOffactionis_20b9cdc9cf": "No Strong Shake Off action is defined for this power.",
       "NoShakeOffactionisdefined_57136f8ad2": "No Shake Off action is defined for this item.",
       "OpposedRoll_e6332e73de": "Opposed Roll",
-      "ShakeOffShiftclickStrongShake_cb6d71c3bd": "Shake Off · Shift + click: Strong Shake Off",
+      "ShakeOffShiftclickStrongShake_cb6d71c3bd": "Shake Off (Shift-click or right-click: Strong Shake Off)",
       "createChatMessage_427fbd0a60": "createChatMessage",
       "updateChatMessage_9891c76b1d": "updateChatMessage",
       "deleteChatMessage_5328027508": "deleteChatMessage",
@@ -433,7 +433,7 @@
       "ModifyMAP_d26f345a84": "Modify MAP",
       "targetrolltargetDamage_c77b3aa462": "target-roll:targetDamage",
       "Conditionaleffect_61fd3d5eef": "Conditional effect",
-      "BetterEffectsflags_3bb5f82be2": "Better Effects flags",
+      "BetterEffectsflags_3bb5f82be2": "Flags",
       "SWADEconditions_66eb9f5a0e": "SWADE conditions",
       "status_d981d43e3f": "status:{p0}",
       "Actoreffects_aa2a502fcf": "{p0} · Actor effects",
@@ -446,7 +446,35 @@
       "subtract_1cc624bbe4": "subtract",
       "Defaultequipmentstate_bf1a3a57f8": "Default equipment state",
       "world_486ea46224": "world",
-      "default_37a8eec1ce": "default"
+      "default_37a8eec1ce": "default",
+      "EnterFlagsToSuppress": "Enter at least one flag to suppress.",
+      "CustomBehaviourName": "Custom name",
+      "Restrict": "Restrict",
+      "RestrictedTraits": "Restricted traits",
+      "ChooseTrait": "Choose trait",
+      "AllTraits": "All Traits",
+      "RestrictedRollFlags": "Restricted roll flags",
+      "SaveRestriction": "Save Restriction",
+      "RollRestricted": "This roll is restricted by {name}."
+    },
+    "Chat": {
+      "TargetFlags": "Target flags"
+    },
+    "InlineDamage": {
+      "Damage": "Damage",
+      "Roll": "Roll damage (right-click: one roll for all targets)",
+      "Resolve": "Resolve damage against this target",
+      "Miss": "Attack or casting roll failed",
+      "Unavailable": "This damage roll or target is no longer accessible.",
+      "NeedsGM": "An active GM is required to save this damage roll.",
+      "ChooseAction": "Choose damage action",
+      "ChooseHit": "Choose a hit to roll damage",
+      "Shot": "Shot {number}: {outcome}",
+      "Reroll": "Reroll damage for this target",
+      "RerollAll": "Reroll once for all targets"
+    },
+    "ChatControls": {
+      "StrongShakeOff": "Strong Shake Off"
     }
   }
 }

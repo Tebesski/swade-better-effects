@@ -2,7 +2,7 @@ import {t as sbsI18n} from "./i18n.mjs";
 import {MODULE_ID, TEMPLATE} from "./constants.mjs";
 import {catalogFlags, rememberFlags} from "./flags.mjs";
 import {bindFlagSuggestions} from "../../swade-better-setting/scripts/flag-suggestions.mjs";
-import {traitName, traitRequest, validateRequest} from "./request-data.mjs";
+import {lingeringRollFlags, traitName, traitRequest, validateRequest} from "./request-data.mjs";
 import {normalizeFlag} from "./rules.mjs";
 import {makeContext, messageContext, setRollContext, traitAdjustment} from "./roll-context.mjs";
 import {isDamageFormula} from "./damage-formulas.mjs";
@@ -11,6 +11,7 @@ import {opposedTN} from "./opposed.mjs";
 import {openRollRequestLibrary, registerRollRequestSettings, savedRollRequests, saveRollRequest} from "./request-library.mjs";
 import {lingeringDamageRoll, openDamageRequest} from "./damage.mjs";
 import {lingeringRollAction} from "./lingering.mjs";
+import {rollRestricted} from "./restrictions.mjs";
 
 const attributes = () => Object.entries(CONFIG.SWADE.attributes).map(([key, value]) => ({key, name: game.i18n.localize(value.long)}));
 const setting = () => game.modules.get("swade-better-setting");
@@ -133,8 +134,16 @@ export function installRollRequests() {
   registerRollRequestSettings({open: openRollRequest, generate: generateRollRequest});
   const refreshLingering = actor => {
     if (!actor?.isOwner) return;
-    for (const message of game.messages) {
-      const request = message.getFlag(MODULE_ID, "context")?.request;
+    const ids = new Set();
+    // updateMessage inserts missing rows. Refresh mounted results only so old
+    // lingering rolls don't get pulled back into the chat log on every update.
+    for (const chat of [ui.chat, ui.chat?.popout]) {
+      if (!chat?.rendered) continue;
+      for (const row of chat.element.querySelectorAll(".message[data-message-id]:has(.sbe-request-result)")) ids.add(row.dataset.messageId);
+    }
+    for (const id of ids) {
+      const message = game.messages.get(id);
+      const request = message?.getFlag(MODULE_ID, "context")?.request;
       if (request?.lingering && request.actorUuid === actor.uuid) void ui.chat.updateMessage(message, {notify: false});
     }
   };
@@ -250,6 +259,10 @@ export function performRequestedTrait(message, request, actor, token, lingering 
     options.sbeRequest.opposition = opposition;
     options.effectFlags = [...request.flags, ...opposition.flags, "opposed"];
   }
+  if (lingering) {
+    options.effectFlags = lingeringRollFlags(options.effectFlags, !!opposition);
+    options.sbeRequest.flags = [...options.effectFlags];
+  }
   options.additionalMods = request.penalty ? [{label: sbsI18n("swade-better-effects.UI.RequestPenalty_88c60c6efc"), value: request.penalty}] : [];
   if (request.modifier) options.additionalMods.push({label: sbsI18n("swade-better-effects.UI.LingeringModifier_dc603088e0"), value: request.modifier});
   if (request.kind === "formula") {
@@ -264,6 +277,7 @@ export function performRequestedTrait(message, request, actor, token, lingering 
     const opponent = opposition?.tokenUuid ? foundry.utils.fromUuidSync(opposition.tokenUuid)
       : opposition?.actorUuid ? {actor: foundry.utils.fromUuidSync(opposition.actorUuid)} : null;
     if (opposition) { context.opposed = opposition.flags; context.rollKinds = ["trait", "opposed"]; }
+    if (rollRestricted(actor, context)) return null;
     const modifiers = actor.getTraitRollModifiers({modifier: 0}, {...options,
       additionalMods: [...options.additionalMods, ...(actor.system.stats.globalMods.trait ?? [])]});
     modifiers.push(...traitAdjustment(context, opponent).applied);

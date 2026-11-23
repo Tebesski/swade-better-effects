@@ -6,10 +6,46 @@ import {damageRoll, isDamageMessage, messageContext, messageSources, setRollCont
 import {opposedResult} from "./opposed-context.mjs";
 import {normalizeFlags} from "./rules.mjs";
 import {usesTargetRows, shakeOffAction} from "../../swade-better-setting/scripts/chat-target-data.mjs";
+import {damageSource, damageResolution, inlineAttackOutcome, inlineDamageActions, inlineDamageMessage, inlineDamageOptions, registerInlineDamage, rollInlineDamage} from "./inline-damage.mjs";
+import {resolveMessageDamage, refreshInlineDamageResolvers} from "./damage.mjs";
 
 const choosers = new Map();
 const RESULT_QUERY = `${MODULE_ID}.targetResult`;
 const saving = new Map();
+const damageMenus = new WeakMap();
+let damageMenuDismissedAt = 0;
+
+async function damageRerollMenu(event, message, token) {
+  if (Date.now() - damageMenuDismissedAt < 400) return;
+  const target = event.currentTarget;
+  let menu = damageMenus.get(target);
+  if (!menu) {
+    const entries = [["Reroll", false], ["RerollAll", true]].map(([key, allTargets]) => ({
+      label: sbsI18n(`${MODULE_ID}.InlineDamage.${key}`), icon: "fa-solid fa-dice",
+      onClick: async () => {
+        try { await rollInlineDamage(message, token.uuid, {allTargets}); }
+        catch (error) { ui.notifications.error(error.message, {console: true}); }
+      }
+    }));
+    // The badge's handler already owns RMB, including its disabled-state check.
+    let dismiss;
+    menu = new foundry.applications.ux.ContextMenu(target, null, entries,
+      {eventName: "sbeDamageMenu", jQuery: false, fixed: true,
+        onClose: () => { if (dismiss) document.removeEventListener("pointerdown", dismiss, true); }});
+    menu.bindDismiss = () => {
+      if (dismiss) document.removeEventListener("pointerdown", dismiss, true);
+      dismiss = event => {
+        if (![0, 2].includes(event.button) || event.button === 0 && menu.element?.contains(event.target)) return;
+        damageMenuDismissedAt = Date.now();
+        void menu.close({animate: false});
+      };
+      document.addEventListener("pointerdown", dismiss, true);
+    };
+    damageMenus.set(target, menu);
+  }
+  await menu.render(target, {event});
+  if (menu.element?.isConnected) menu.bindDismiss();
+}
 
 async function saveTargetResult({messageId, targetUuid, result}, {user}) {
   const message = game.messages.get(messageId), token = foundry.utils.fromUuidSync(targetUuid);
@@ -152,15 +188,16 @@ export async function rollTargetShakeOff(message, targetUuid, strong = false, pa
   const item = sourceItem(message);
   const selected = shakeOffAction(item?.system.actions?.additional, strong);
   if (!selected) throw new Error(strong ? sbsI18n("swade-better-effects.UI.NoStrongShakeOffactionis_20b9cdc9cf") : sbsI18n("swade-better-effects.UI.NoShakeOffactionisdefined_57136f8ad2"));
-  const [id, action] = selected, actor = token.actor;
-  const name = action.override || item.system.actions.trait;
+  const [id, chosen] = selected, actor = token.actor;
+  const action = {...chosen, name: chosen.name || (strong ? sbsI18n("swade-better-effects.ChatControls.StrongShakeOff") : sbsI18n("swade-better-effects.UI.ShakeOff_c3e5866333"))};
+  const name = action.override || "vigor";
   const attribute = Object.entries(CONFIG.SWADE.attributes).find(([key, data]) =>
     [key, game.i18n.localize(data.long)].some(label => clean(label) === clean(name)))?.[0];
   const skill = !attribute && actor.items.find(skill => skill.type === "skill" && [skill.name, skill.system.swid].some(label => clean(label) === clean(name)));
   const response = {...oppositionData(message, token), inline: true, payBenny, targetNumber: 4, mode: "shakeOff", strong,
     trait: {kind: attribute ? "attribute" : "skill", key: attribute ?? skill?.id ?? null, name: action.name}, action: id};
-  const options = {item, sbsResistance: true, sbsTargetingAction: id, sbeResponse: response,
-    additionalMods: [...(item.traitModifiers ?? []), ...(action.modifier ? [{label: action.name, value: action.modifier}] : [])],
+  const options = {item: id ? item : undefined, sbsResistance: true, sbsTargetingAction: id, sbeResponse: response,
+    additionalMods: action.modifier && Number(action.modifier) !== 0 ? [{label: action.name, value: action.modifier}] : [],
     rof: action.dice ?? 1, title: `${token.name}: ${action.name}`, flavour: action.name};
   return attribute ? actor.rollAttribute(attribute, options) : actor.rollSkill(skill?.id ?? null, options);
 }
@@ -169,6 +206,8 @@ function targetRows(message, context) {
   const section = document.createElement("section");
   section.className = "sbe-target-responses";
   section.setAttribute("aria-label", sbsI18n("swade-better-effects.UI.Targetresistancerolls_69521eff69"));
+  const damageCard = isDamageMessage(message);
+  const damageActions = damageCard ? [] : inlineDamageActions(message);
   for (const token of messageTargets(message, context)) {
     if (!token.actor || (token.hidden && !game.user.isGM && !token.isOwner)) continue;
     const row = document.createElement("details"); row.className = "sbe-target-row";
@@ -179,19 +218,21 @@ function targetRows(message, context) {
     image.className = "sbe-target-portrait";
     name.textContent = token.name;
     const controls = document.createElement("span"); controls.className = "sbe-target-controls";
-    const button = (action, icon, label, callback, disabled = false) => {
+    const button = (action, icon, label, callback, disabled = false, rightClick) => {
       const a = document.createElement("a"); a.dataset.action = action;
       a.tabIndex = disabled ? -1 : 0; a.setAttribute("role", "button"); a.setAttribute("aria-label", label);
       a.dataset.tooltipText = label; a.setAttribute("aria-disabled", String(disabled));
       const glyph = document.createElement("i"); glyph.className = icon; a.append(glyph);
       const run = async event => {
         event.preventDefault(); event.stopPropagation();
-        if (disabled || a.dataset.busy) return;
+        const right = event.type === "contextmenu";
+        if ((right ? rightClick?.disabled ?? disabled : disabled) || a.dataset.busy) return;
         a.dataset.busy = "true";
-        try { await callback(event); } catch (error) { ui.notifications.error(error.message, {console: true}); }
+        try { await (right ? rightClick.run(event) : callback(event)); } catch (error) { ui.notifications.error(error.message, {console: true}); }
         finally { delete a.dataset.busy; }
       };
       a.addEventListener("click", run);
+      if (rightClick) a.addEventListener("contextmenu", run);
       a.addEventListener("keydown", event => { if (["Enter", " "].includes(event.key)) void run(event); });
       controls.append(a); return a;
     };
@@ -204,19 +245,21 @@ function targetRows(message, context) {
           const choice = await rerollChoice(token);
           if (!choice) return;
           if (mode === "opposed") return rollTargetOpposition(message, token.uuid, saved.trait.kind, saved.trait.key, choice === "benny");
-          return rollTargetShakeOff(message, token.uuid, event.shiftKey || saved.strong, choice === "benny");
+          return rollTargetShakeOff(message, token.uuid, event.type === "contextmenu" || event.shiftKey || saved.strong, choice === "benny");
         }
-        return mode === "opposed" ? openOpposedRoll(message, {targetUuid: token.uuid}) : rollTargetShakeOff(message, token.uuid, event.shiftKey);
+        return mode === "opposed" ? openOpposedRoll(message, {targetUuid: token.uuid}) : rollTargetShakeOff(message, token.uuid, event.type === "contextmenu" || event.shiftKey);
       };
-      const control = button(mode === "opposed" ? "opposed-roll" : "shake-off", mode === "opposed" ? "fa-solid fa-dice" : "fa-solid fa-person-running", label, rerun, !token.actor.isOwner || !hasAction);
+      const control = button(mode === "opposed" ? "opposed-roll" : "shake-off", mode === "opposed" ? "fa-solid fa-dice" : "fa-solid fa-person-running", label, rerun, damageCard || !token.actor.isOwner || !hasAction,
+        mode === "opposed" ? undefined : {run: rerun});
       const box = document.createElement("span"); box.className = "sbe-target-roll-box";
       control.before(box); box.append(control);
       if (!saved) continue;
       const tn = mode === "opposed" ? opposedTN(message) : saved.targetNumber;
       const outcome = opposedResult(saved.total, tn, saved.criticalFailure);
-      const badge = button("reroll-" + mode, "", sbsI18n("swade-better-effects.UI.Reroll_25fe6ffc61", {p0: (saved.trait.name)}), rerun, !token.actor.isOwner);
-      badge.className = "sbe-target-result " + (outcome.outcome === "Success" ? outcome.raises ? "raise" : "success" : "failure");
-      badge.textContent = saved.total; box.append(badge);
+      const badge = document.createElement("span");
+      box.dataset.rollOutcome = outcome.outcome === "Success" ? outcome.raises ? "raise" : "success" : "failure";
+      badge.className = "sbe-target-result";
+      badge.textContent = saved.total; control.append(badge);
       const tooltip = document.createElement("div");
       const title = document.createElement("strong"); title.textContent = sbsI18n("swade-better-effects.UI.TN_40a8723f1a", {p0: (saved.trait.name), p1: (tn)}); tooltip.append(title);
       for (const text of [`Result: ${saved.total} · ${outcome.outcome}${outcome.raises ? ` · ${outcome.raises} raises` : ""}`, saved.dice,
@@ -224,8 +267,36 @@ function targetRows(message, context) {
         if (!text) continue;
         tooltip.append(document.createElement("hr")); const section = document.createElement("div"); section.textContent = text; tooltip.append(section);
       }
-      delete badge.dataset.tooltipText;
-      badge.dataset.tooltipHtml = tooltip.outerHTML; badge.dataset.tooltipClass = "sbe-resistance-tooltip";
+      delete control.dataset.tooltipText;
+      control.dataset.tooltipHtml = tooltip.outerHTML; control.dataset.tooltipClass = "sbe-resistance-tooltip";
+    }
+    if (damageCard || damageActions.length) {
+      const resolution = damageResolution(message, token);
+      const ownedSource = damageSource(message, context)?.actor?.isOwner;
+      const saved = damageCard ? message : inlineDamageMessage(message, token.uuid);
+      const outcome = inlineAttackOutcome(message, token);
+      const label = sbsI18n(`${MODULE_ID}.InlineDamage.Roll`);
+      const roll = button("target-damage", "fa-solid fa-burst", label,
+        () => saved ? resolveMessageDamage(saved, {tokens: [token]}) : rollInlineDamage(message, token.uuid),
+        !!resolution?.final || (saved ? !game.user.isGM && !ownedSource && !token.actor.isOwner : !ownedSource),
+        {run: event => saved ? damageRerollMenu(event, message, token) : rollInlineDamage(message, token.uuid, {allTargets: true}), disabled: !!resolution || !ownedSource});
+      const box = document.createElement("span"); box.className = "sbe-target-roll-box sbe-target-damage-box";
+      if (resolution) box.dataset.resolution = resolution.state;
+      roll.before(box); box.append(roll);
+      if (saved) {
+        const result = document.createElement("span");
+        result.textContent = damageRoll(saved).total;
+        result.className = "sbe-target-result sbe-target-damage-result";
+        roll.append(result);
+        const tip = document.createElement("div");
+        const formula = document.createElement("strong"); formula.textContent = damageRoll(saved).formula; tip.append(formula);
+        const detail = document.createElement("div"); detail.textContent = sbsI18n(`${MODULE_ID}.InlineDamage.Resolve`); tip.append(detail);
+        roll.dataset.tooltipHtml = tip.outerHTML; roll.dataset.tooltipClass = "sbe-resistance-tooltip";
+        delete roll.dataset.tooltipText;
+      } else {
+        const preview = inlineDamageOptions(message, damageActions[0].key, true);
+        roll.dataset.tooltipText = `${label} · ${preview?.formula ?? ""}`;
+      }
     }
     button("ping-target", "fa-solid fa-signal-stream", sbsI18n("swade-better-effects.UI.Pingtoken_28b35faa5d"), () => {
       if (!canvas.ready || token.parent.id !== canvas.scene.id || !token.object?.visible) throw new Error(sbsI18n("swade-better-effects.UI.Thistargetisnotvisibleon_0a78971b2e"));
@@ -240,8 +311,20 @@ function targetRows(message, context) {
 }
 
 export function renderOpposedRoll(message, html, context) {
-  if (isDamageMessage(message)) return;
   const content = html.querySelector(".message-content") ?? html;
+  if (!html.dataset.sbeSharedDamageBound) {
+    html.dataset.sbeSharedDamageBound = "true";
+    html.addEventListener("contextmenu", event => {
+      const button = event.target.closest('.damage-rolls button, [data-action="damage"], .swadetools-rolldamage');
+      if (!button) return;
+      const targets = messageTargets(message, messageContext(message));
+      const target = targets.find(target => target.id === button.getAttribute("data-swadetools-targetid")) ?? targets[0];
+      if (!target || !damageSource(message)?.actor?.isOwner) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      void rollInlineDamage(message, target.uuid, {allTargets: true, damageAction: button.dataset.action})
+        .catch(error => ui.notifications.error(error.message, {console: true}));
+    }, {capture: true});
+  }
   if (context.opposition && Number.isFinite(opposedTN(message)) && Number.isFinite(context.opposition.targetNumber)) {
     const opposition = context.opposition, total = opposedTN(message);
     const result = opposedResult(total, opposition.targetNumber, !!damageRoll(message).isCritfail);
@@ -253,9 +336,12 @@ export function renderOpposedRoll(message, html, context) {
   if (opposedTN(message) === null || !messageTargets(message, context).some(token => token.actor)) return;
   content.querySelector(".sbe-target-responses")?.remove();
   content.append(targetRows(message, context));
+  html.classList.toggle("sbe-inline-damage-card", isDamageMessage(message) || inlineDamageActions(message).length > 0);
 }
 
 export function installOpposedRolls() {
+  registerInlineDamage();
+  Hooks.on("updateChatMessage", refreshInlineDamageResolvers);
   CONFIG.queries[RESULT_QUERY] = (request, context) => {
     if (!game.user.isGM) throw new Error(sbsI18n("swade-better-effects.UI.OnlyaGMmayhandleremote_8f4db2cf4d"));
     return saveTargetResult(request, context);

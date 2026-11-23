@@ -11,6 +11,7 @@ import {lingeringConfig, lingeringOutcome, resolveOutcomeEffect} from "./lingeri
 import {normalizeFlag} from "./rules.mjs";
 import {LINGERING_APPLIED_TURN, LINGERING_PARENT, isApplicationTurn, outcomeEffects} from "./lingering-effects.mjs";
 import {inferLingeringSource, rollLingeringOpposition} from "./lingering-opposition.mjs";
+import {lingeringRollFlags} from "./request-data.mjs";
 
 const pending = new Map();
 const stateKey = "lingeringState";
@@ -86,7 +87,7 @@ async function requestAtTurn(combat, combatant, timing, turn) {
       // The source roll may take time. Recheck that the parent still applies.
       if (!foundry.utils.fromUuidSync(effect.uuid)?.modifiesActor) return;
       const request = buildRollRequest({trait: config.trait, tn: opposition?.total ?? config.tn,
-        modifier: config.modifier, flags: documentFlags(effect), allowFormula: true});
+        modifier: config.modifier, flags: lingeringRollFlags(documentFlags(effect), !!opposition), allowFormula: true});
       const requestId = foundry.utils.randomID();
       await effect.setFlag(MODULE_ID, stateKey, {effectUuid: effect.uuid, requestId, turnKey, resolved: false,
         resultUuid: null, rerollPending: false, appliedUuids: [], attemptProgress: state?.progress ?? 0,
@@ -111,10 +112,14 @@ async function progressMarker(effect, progress, required) {
   const actor = effect.actor;
   const existing = actor.effects.find(marker => marker.getFlag(MODULE_ID, markerKey) === effect.uuid);
   const name = `${effect.name} · ${progress}/${required} successes`;
-  const excludedTags = [normalizeFlag(name)];
-  if (existing) return existing.update({name, [`flags.${MODULE_ID}.excludedTags`]: excludedTags});
+  if (existing) {
+    // Older markers explicitly excluded their generated name flag.
+    const excludedTags = (existing.getFlag(MODULE_ID, "excludedTags") ?? [])
+      .filter(flag => ![normalizeFlag(existing.name), normalizeFlag(name)].includes(flag));
+    return existing.update({name, [`flags.${MODULE_ID}.excludedTags`]: excludedTags});
+  }
   return actor.createEmbeddedDocuments("ActiveEffect", [{name, img: effect.img, origin: effect.uuid,
-    transfer: false, flags: {[MODULE_ID]: {[markerKey]: effect.uuid, excludedTags}}}]);
+    transfer: false, flags: {[MODULE_ID]: {[markerKey]: effect.uuid}}}]);
 }
 
 async function removeProgress(effect) {

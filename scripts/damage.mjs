@@ -9,10 +9,20 @@ import {renderOpposedRoll} from "./opposed.mjs";
 import {moduleScriptBase} from "./module-imports.mjs";
 import {damageRulesForTarget} from "./damage-formulas.mjs";
 import {damageApplied, hasDamageApplications} from "./applications.mjs";
+import {inlineDamageMessage, inlineDamageDefense, recordDamageResolution, damageResolution, resolutionKey} from "./inline-damage.mjs";
 
 let TargetedAdapter;
 let targetedInitialization;
 const openDamage = new Map();
+
+export function refreshInlineDamageResolvers(message) {
+  for (const app of openDamage.values()) {
+    const source = app.sbeMessage;
+    if (source?.uuid !== message.uuid || !source.inlineDamageTargetUuid) continue;
+    const token = foundry.utils.fromUuidSync(source.inlineDamageTargetUuid);
+    if (message.getFlag(MODULE_ID, `inlineDamage.${token?.id}`)?.id !== source.inlineDamageResultId) void app.close();
+  }
+}
 
 export function lingeringDamageRoll(message) {
   const data = message?.getFlag(MODULE_ID, "lingeringResult")?.damage;
@@ -29,8 +39,9 @@ const tinyMelee = context => context.attacker?.includes("size-4") && context.rol
 export function prepareDamage(actor, token, message, {damage, ap, toughness, armor, context = messageContext(message)} = {}) {
   const rules = damageRulesForTarget(context, actor, token);
   const defense = actor.type === "vehicle" ? actor.system.toughness : actor.system.stats.toughness;
-  const resolved = resolveDamage({damage: damage ?? baseDamage(message), ap: ap ?? damageAP(message), toughness: toughness ?? (actor.type === "vehicle" ? defense.total : defense.value),
-    armor: armor ?? defense.armor, skipUnrolled: true, ...rules});
+  const location = inlineDamageDefense(actor, context);
+  const resolved = resolveDamage({damage: damage ?? baseDamage(message), ap: ap ?? damageAP(message), toughness: toughness ?? location?.toughness ?? (actor.type === "vehicle" ? defense.total : defense.value),
+    armor: armor ?? location?.armor ?? defense.armor, skipUnrolled: true, ...rules});
   const tiny = tinyMelee(rules.context);
   if (tiny) resolved.damage = Math.min(resolved.damage, 1);
   const blocked = tiny && ((actor.system.stats?.scale ?? actor.system.scale ?? 0) >= -2 || resolved.toughness > 1);
@@ -75,7 +86,8 @@ async function loadTargetedDamage() {
     TargetedAdapter = class ConditionalTargetedDamageApplicator extends Base {
       static DEFAULT_OPTIONS = {classes: ["sbe-targeted-adapter"], actions: {
         takeWounds: async function (...args) { await this.finishDamage(Base.DEFAULT_OPTIONS.actions.takeWounds, args); },
-        applyShaken: async function (...args) { await this.finishDamage(Base.DEFAULT_OPTIONS.actions.applyShaken, args); }
+        applyShaken: async function (...args) { await this.finishDamage(Base.DEFAULT_OPTIONS.actions.applyShaken, args); },
+        noDamage: async function (...args) { await this.finishDamage(Base.DEFAULT_OPTIONS.actions.noDamage, args, "none"); }
       }};
       static PARTS = {summary: {template: `${TEMPLATE}/damage-summary.hbs`}, ...Base.PARTS};
       render(options, ...args) {
@@ -104,7 +116,7 @@ async function loadTargetedDamage() {
       applyShaken() {
         return this.shakenUpdate = super.applyShaken();
       }
-      async finishDamage(action, args) {
+      async finishDamage(action, args, state = "damaged") {
         if (this.sbeApplying) return;
         this.sbeApplying = true;
         try {
@@ -113,8 +125,20 @@ async function loadTargetedDamage() {
           const wounds = Math.max(0, this.object.wounds);
           await action.call(this, ...args);
           await this.shakenUpdate;
-          if (this.sbeApplications) await damageApplied(this.sbeMessage, this.options.token, {shaken: !wasShaken && actor.statuses.has("shaken"), wounds});
+          this.sbeOutcome = state;
+          await recordDamageResolution(this.sbeMessage, this.options.token, state);
+          if (state === "damaged" && this.sbeApplications) await damageApplied(this.sbeMessage, this.options.token, {shaken: !wasShaken && actor.statuses.has("shaken"), wounds});
         } finally { this.sbeApplying = false; }
+      }
+      async attemptSoak(...args) {
+        this.sbeSoaking = true;
+        try {
+          await super.attemptSoak(...args);
+          if (this.object.attemptedSoak || this.object.bestSoakAttempt > 0) {
+            this.sbeOutcome = "soaked";
+            await recordDamageResolution(this.sbeMessage, this.options.token, "soaked", this.object.wounds <= 0);
+          }
+        } finally { this.sbeSoaking = false; }
       }
       async outputChat(message) {
         const original = {damage: this.object.damage, ap: this.object.ap};
@@ -124,7 +148,11 @@ async function loadTargetedDamage() {
           await super.outputChat(message);
         } finally { Object.assign(this.object, original); this.sbeDefense = null; }
       }
-      async _onClose(options) { openDamage.delete(this.sbeKey); await super._onClose(options); }
+      async _onClose(options) {
+        openDamage.delete(this.sbeKey);
+        if (!this.sbeApplying && !this.sbeSoaking) await recordDamageResolution(this.sbeMessage, this.options.token, this.sbeOutcome ?? "none");
+        await super._onClose(options);
+      }
     };
   } catch (error) {
     console.error(`${MODULE_ID} | Targeted Damage adapter could not be loaded`, error);
@@ -177,6 +205,8 @@ export class ConditionalDamageApplicator extends foundry.applications.api.Handle
     if (!roll) return;
     this.attemptedSoak = true;
     if (!roll.isCritfail) this.bestSoak = Math.max(this.bestSoak, Math.max(0, Math.floor(roll.total / 4)));
+    this.sbeOutcome = "soaked";
+    await recordDamageResolution(this.message, this.token, "soaked", false);
     this.render();
   }
   async takeDamage() {
@@ -205,21 +235,29 @@ export class ConditionalDamageApplicator extends foundry.applications.api.Handle
       const summary = await foundry.applications.handlebars.renderTemplate(`${TEMPLATE}/damage-result.hbs`, {name: this.actor.name, remaining: this.remaining, fullySoaked, shaken: !fullySoaked && this.result.status !== "none", sbe: this.values});
       await CONFIG.ChatMessage.documentClass.create({speaker: CONFIG.ChatMessage.documentClass.getSpeaker({actor: this.actor}), content: summary}, {messageMode: game.settings.get("core", "messageMode")});
       const applied = {shaken: !wasShaken && this.actor.statuses.has("shaken"), wounds: this.remaining};
+      this.sbeOutcome = fullySoaked ? "soaked" : this.remaining || this.result.status !== "none" ? "damaged" : "none";
+      await recordDamageResolution(this.message, this.token, this.sbeOutcome);
       await this.close();
       if (this.sbeApplications) await damageApplied(this.message, this.token, applied);
     } finally { this.applying = false; }
   }
-  async _onClose(options) { openDamage.delete(this.sbeKey); await super._onClose(options); }
+  async _onClose(options) {
+    openDamage.delete(this.sbeKey);
+    if (!this.applying) await recordDamageResolution(this.message, this.token, this.sbeOutcome ?? "none");
+    await super._onClose(options);
+  }
 }
 
-export async function openDamageRequest({messageUuid, tokenUuid, rollData}) {
+export async function openDamageRequest({messageUuid, tokenUuid, rollData, inlineTargetUuid}) {
   if (game.modules.get("swade-targeted-damage")?.active) {
     await initializeTargetedDamage();
     if (!TargetedAdapter) throw new Error(sbsI18n("swade-better-effects.UI.TheTargetedDamageintegrationisunavailable_86c10a393a"));
   }
   let [message, token] = await Promise.all([foundry.utils.fromUuid(messageUuid).catch(() => null), foundry.utils.fromUuid(tokenUuid)]);
+  if (inlineTargetUuid && inlineTargetUuid !== tokenUuid) throw new Error(sbsI18n("swade-better-effects.UI.Thistokenisnotthetarget_fda03ce96e"));
+  if (inlineTargetUuid && message?.isContentVisible !== false && message?.visible) message = inlineDamageMessage(message, tokenUuid);
   const visible = message?.visible && message.isContentVisible !== false;
-  const outcome = visible && lingeringDamageRoll(message);
+  const outcome = visible && !inlineTargetUuid && lingeringDamageRoll(message);
   if (outcome) {
     if (!outcome.context.targetUuids.includes(tokenUuid)) throw new Error(sbsI18n("swade-better-effects.UI.Thistokenisnotthetarget_fda03ce96e"));
     message = {uuid: message.uuid, visible: true, isContentVisible: true, significantRoll: outcome.roll,
@@ -229,14 +267,20 @@ export async function openDamageRequest({messageUuid, tokenUuid, rollData}) {
   // damage context needed by the owner; never require access to the original private message.
   if ((!message?.visible || message.isContentVisible === false) && rollData && Number.isFinite(rollData.total) && Number.isFinite(rollData.ap)) {
     const context = structuredClone(rollData.context);
-    message = {uuid: messageUuid, visible: true, significantRoll: {total: rollData.total, ap: rollData.ap,
+    message = {id: messageUuid.split(".").at(-1), uuid: messageUuid, visible: true,
+      damageResolutionKey: rollData.resolutionKey, inlineDamageResultId: rollData.resultId, inlineDamageTargetUuid: inlineTargetUuid,
+      significantRoll: {total: rollData.total, ap: rollData.ap,
       isHeavyWeapon: !!rollData.isHeavyWeapon, options: {rollType: "damage"}}, getFlag: (scope, key) => scope === MODULE_ID && key === "context" ? context : undefined};
   }
   const actor = token?.actor;
   if (!actor?.isOwner || !message?.visible || message.isContentVisible === false || !isDamageMessage(message)) throw new Error(sbsI18n("swade-better-effects.UI.Thisdamagerequestisnotaccessible_c5ed32de59"));
+  if (damageResolution(message, token)?.final) return {opened: false};
   const key = `${messageUuid}:${tokenUuid}`;
   const existing = openDamage.get(key);
-  if (existing) { existing.bringToFront(); return {opened: true}; }
+  if (existing) {
+    if (inlineTargetUuid && existing.sbeMessage?.inlineDamageResultId !== message.inlineDamageResultId) await existing.close();
+    else { existing.bringToFront(); return {opened: true}; }
+  }
   const app = TargetedAdapter ? new TargetedAdapter({token, damage: baseDamage(message), ap: damageAP(message)})
     : new ConditionalDamageApplicator({actor, token, message, key});
   app.sbeMessage = message; app.sbeKey = key;
@@ -252,11 +296,13 @@ export async function resolveMessageDamage(message, {tokens: chosenTokens} = {})
   const tokens = chosenTokens ?? (context.lingeringDamage ? (context.targetUuids ?? []).map(uuid => foundry.utils.fromUuidSync(uuid)).filter(Boolean)
     : targeted ? [...game.user.targets] : canvas.tokens?.controlled ?? []);
   if (!tokens.length) return ui.notifications.warn(targeted ? sbsI18n("swade-better-effects.UI.Targetatleastonetokenfirst_b3378c80ec") : sbsI18n("swade-better-effects.UI.Selectatleastonetokenfirst_4050501bd5"));
+  const rollData = {total: baseDamage(message), ap: damageAP(message), isHeavyWeapon: !!damageIsHeavyWeapon(message),
+    context: structuredClone(context), applications: hasDamageApplications(message, context)};
   for (const token of tokens) {
     const actor = token.actor;
     if (!actor) continue;
-    const request = {messageUuid: message.uuid, tokenUuid: (token.document ?? token).uuid, rollData: {total: baseDamage(message), ap: damageAP(message),
-      isHeavyWeapon: !!damageIsHeavyWeapon(message), context: structuredClone(context), applications: hasDamageApplications(message, context)}};
+    const request = {messageUuid: message.uuid, tokenUuid: (token.document ?? token).uuid, inlineTargetUuid: message.inlineDamageTargetUuid,
+      rollData: {...rollData, resultId: message.inlineDamageResultId, resolutionKey: resolutionKey(message, token.document ?? token)}};
     const playerOwner = game.users.find(u => u.active && !u.isGM && u.character?.id === actor.id && actor.testUserPermission(u, "OWNER"))
       ?? game.users.find(u => u.active && !u.isGM && actor.testUserPermission(u, "OWNER"));
     if (actor.isOwner && (!targeted || !playerOwner || playerOwner.id === game.user.id)) await openDamageRequest(request);
@@ -270,6 +316,9 @@ export async function resolveMessageDamage(message, {tokens: chosenTokens} = {})
 }
 
 export function renderDamageMessage(message, html) {
+  const saved = message.getFlag(MODULE_ID, "context");
+  const savedNotes = Array.isArray(saved?.notes);
+  if (savedNotes) renderRollNotes(message, html, saved).catch(error => console.error(`${MODULE_ID} | Roll notes`, error));
   const damage = isDamageMessage(message);
   if ((!damage && !isTraitMessage(message)) || message.isContentVisible === false) return;
   if (html.dataset.sbeDamageBound) return;
@@ -277,7 +326,7 @@ export function renderDamageMessage(message, html) {
   const context = messageContext(message);
   renderOpposedRoll(message, html, context);
   renderChatFlags(message, html, context);
-  renderRollNotes(message, html, context).catch(error => console.error(`${MODULE_ID} | Roll notes`, error));
+  if (!savedNotes) renderRollNotes(message, html, context).catch(error => console.error(`${MODULE_ID} | Roll notes`, error));
   if (!damage) return;
   html.addEventListener("click", event => {
     if (!event.target.closest("button.calculate-wounds")) return;

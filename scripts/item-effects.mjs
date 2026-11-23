@@ -2,6 +2,7 @@ import {t as sbsI18n} from "./i18n.mjs";
 import {ADD_ITEM_KEY, MODULE_ID} from "./constants.mjs";
 import {conditionsValid} from "./effects.mjs";
 import {hasCondition} from "./rules.mjs";
+import {withSuppressionScope} from "./flag-changes.mjs";
 import {grantEquipmentState, occupiedHands} from "./grant-equipment.mjs";
 
 const GRANT_SOURCE = "grantedItemSource";
@@ -31,9 +32,11 @@ export async function resolveGrantItem(uuid) {
 }
 
 function itemGrants(effect) {
+  const changes = effect._source.system.changes;
+  if (!changes.some(change => change.key === ADD_ITEM_KEY)) return [];
   if (!effect.active || !conditionsValid(effect)) return [];
   const conditions = effect.getFlag(MODULE_ID, "conditions") ?? [];
-  return effect._source.system.changes
+  return changes
     .filter((change, index) => change.key === ADD_ITEM_KEY && change.type === "add" && !hasCondition(conditions[index]?.predicate))
     .map(change => readItemGrant(change.value)).filter(grant => grant.uuid);
 }
@@ -68,16 +71,20 @@ async function planItemGrants(actor) {
 
   // Follow grants from actor effects and ordinary items. A chain or cycle of
   // granted items cannot keep itself on the actor after its source goes away.
-  const wanted = new Map();
-  for (const effect of roots) {
-    for (const grant of itemGrants(effect)) {
-      const {uuid} = grant;
-      if (originalSources.has(uuid) || wanted.has(uuid)) continue;
-      wanted.set(uuid, grant);
-      const existing = managed.get(uuid)?.[0];
-      for (const embedded of effectsByItem.get(existing?.id) ?? []) roots.add(embedded);
+  const wanted = withSuppressionScope(actor, () => {
+    const grants = new Map();
+    for (const effect of roots) {
+      for (const grant of itemGrants(effect)) {
+        const {uuid} = grant;
+        if (originalSources.has(uuid) || grants.has(uuid)) continue;
+        grants.set(uuid, grant);
+        const existing = managed.get(uuid)?.[0];
+        for (const embedded of effectsByItem.get(existing?.id) ?? []) roots.add(embedded);
+      }
     }
-  }
+    return grants;
+  });
+  if (!wanted.size && !managed.size) return;
   const added = await Promise.all([...wanted].filter(([uuid]) => !managed.has(uuid)).map(async ([uuid, {equipStatus, hand}]) => {
     const item = await resolveGrantItem(uuid);
     if (!item || sourceUuids(item).some(source => originalSources.has(source))) return null;
@@ -92,7 +99,9 @@ async function planItemGrants(actor) {
   }));
   const remove = [...managed].flatMap(([uuid, items]) => items.slice(wanted.has(uuid) ? 1 : 0).map(item => item.id));
   const create = added.filter(Boolean);
-  const occupied = occupiedHands([...actor.items].filter(item => !remove.includes(item.id)));
+  if (!remove.length && !create.length) return;
+  const removing = new Set(remove);
+  const occupied = occupiedHands(actor.items.filter(item => !removing.has(item.id)));
   for (const grant of create) {
     if (!grant.item) continue;
     const before = new Set(occupied);
@@ -102,7 +111,6 @@ async function planItemGrants(actor) {
       foundry.utils.setProperty(grant.data, `flags.${MODULE_ID}.grantedEquipHand`, [...occupied].find(hand => !before.has(hand)));
     }
   }
-  if (!remove.length && !create.length) return;
   return {remove, create, signature: JSON.stringify([...wanted.keys()].sort())};
 }
 
@@ -121,30 +129,44 @@ export function registerItemGrants() {
       ?? game.users.find(user => user.active && actor.testUserPermission(user, "OWNER"));
     if ((coordinator?.id ?? userId) !== game.user.id) return;
     const uuid = actor.uuid;
-    const task = (pending.get(uuid) ?? Promise.resolve()).then(async () => {
-      const current = await foundry.utils.fromUuid(uuid);
-      if (!current?.isOwner) return;
-      const seen = new Set();
-      for (;;) {
-        const plan = await planItemGrants(current);
-        if (!plan) break;
-        if (seen.has(plan.signature)) {
-          console.warn(`${MODULE_ID} | Add Item rules on ${current.name} could not settle. Check for rules that disable their own source.`);
-          break;
+    const running = pending.get(uuid);
+    if (running) {
+      running.dirty = true;
+      return;
+    }
+    const state = {dirty: true};
+    pending.set(uuid, state);
+    void Promise.resolve().then(async () => {
+      try {
+        while (state.dirty) {
+          state.dirty = false;
+          const current = await foundry.utils.fromUuid(uuid);
+          if (!current?.isOwner) return;
+          const seen = new Set();
+          while (!state.dirty) {
+            const plan = await planItemGrants(current);
+            if (!plan || state.dirty) break;
+            if (seen.has(plan.signature)) {
+              console.warn(`${MODULE_ID} | Add Item rules on ${current.name} could not settle. Check for rules that disable their own source.`);
+              break;
+            }
+            seen.add(plan.signature);
+            if (plan.remove.length) await current.deleteEmbeddedDocuments("Item", plan.remove, {sbeItemGrant: true});
+            if (state.dirty) break;
+            if (plan.create.length) {
+              const sbeGrantEquipStatus = Object.fromEntries(plan.create.filter(grant => grant.equipStatus !== undefined)
+                .map(({uuid, equipStatus}) => [uuid, equipStatus]));
+              await current.createEmbeddedDocuments("Item", plan.create.map(grant => grant.data),
+                {renderSheet: false, sbeItemGrant: true, sbeGrantEquipStatus});
+            }
+          }
         }
-        seen.add(plan.signature);
-        if (plan.remove.length) await current.deleteEmbeddedDocuments("Item", plan.remove, {sbeItemGrant: true});
-        if (plan.create.length) {
-          const sbeGrantEquipStatus = Object.fromEntries(plan.create.filter(grant => grant.equipStatus !== undefined)
-            .map(({uuid, equipStatus}) => [uuid, equipStatus]));
-          await current.createEmbeddedDocuments("Item", plan.create.map(grant => grant.data),
-            {renderSheet: false, sbeItemGrant: true, sbeGrantEquipStatus});
-        }
+      } catch (error) {
+        console.error(`${MODULE_ID} | Add Item: ${actor.name}`, error);
+      } finally {
+        pending.delete(uuid);
       }
-    }).catch(error => console.error(`${MODULE_ID} | Add Item: ${actor.name}`, error)).finally(() => {
-      if (pending.get(uuid) === task) pending.delete(uuid);
     });
-    pending.set(uuid, task);
   }
   for (const event of ["create", "update", "delete"]) {
     Hooks.on(`${event}ActiveEffect`, (effect, ...args) => {

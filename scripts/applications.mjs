@@ -13,6 +13,7 @@ import {buildRollRequest, postApplicationRequest} from "./requests.mjs";
 import {damageRoll, isDamageMessage, isTraitMessage, messageContext, traitAdjustment} from "./roll-context.mjs";
 import {criticalFailure} from "./roll-outcomes.mjs";
 import {hasCondition, normalizeFlags} from "./rules.mjs";
+import {inlineDamageMessage} from "./inline-damage.mjs";
 
 const damageQuery = `${MODULE_ID}.applicationDamage`;
 const removalQuery = `${MODULE_ID}.applicationRemove`;
@@ -61,7 +62,7 @@ function audience(message, target, recipient) {
 function immune(actor, token, context, flags) {
   if (!flags.length) return false;
   const target = rollTarget({}, token, actor).flags;
-  const defenderRules = collectRules(actor).map(rule => ({...rule, ownerFlags: target}));
+  const defenderRules = collectRules(actor, undefined, target);
   return !!immunityMatch({context: {...context, roll: flags, target}, defenderRules}, {requireFlag: true});
 }
 
@@ -193,8 +194,9 @@ async function onAttack(message) {
   await runApplications(message, context, events, rules);
 }
 
-async function onDamage({messageUuid, tokenUuid, shaken, wounds}, {user}) {
-  const message = resolve(messageUuid);
+async function onDamage({messageUuid, tokenUuid, shaken, wounds, inlineTargetUuid}, {user}) {
+  let message = resolve(messageUuid);
+  if (inlineTargetUuid && inlineTargetUuid === tokenUuid && message) message = inlineDamageMessage(message, tokenUuid);
   const target = resolve(tokenUuid);
   if (message?.documentName !== "ChatMessage" || target?.documentName !== "Token" || !owns(target.actor, user) || !isDamageMessage(message)) return;
   const context = messageContext(message);
@@ -207,7 +209,7 @@ async function onDamage({messageUuid, tokenUuid, shaken, wounds}, {user}) {
 export async function damageApplied(message, token, {shaken, wounds}) {
   if (!shaken && !wounds) return;
   const gm = game.users.activeGM;
-  const event = {messageUuid: message.uuid, tokenUuid: (token.document ?? token).uuid, shaken, wounds};
+  const event = {messageUuid: message.uuid, tokenUuid: (token.document ?? token).uuid, shaken, wounds, inlineTargetUuid: message.inlineDamageTargetUuid};
   try {
     if (gm && !gm.isSelf) await gm.query(damageQuery, event);
     else await onDamage(event, {user: game.user});

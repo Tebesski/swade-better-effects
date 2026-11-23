@@ -48,11 +48,24 @@ export function renderChatFlags(message, html, context) {
   if (!game.user.isGM) return;
   const targets = messageTargets(message, context);
   if (!targets.length) return;
+  const rows = new Map();
+  for (const row of html.querySelectorAll(".sbe-target-row")) {
+    if (!rows.has(row.dataset.tokenUuid)) rows.set(row.dataset.tokenUuid, row);
+  }
+  let targetFlags;
   for (const token of targets) {
-    const row = [...html.querySelectorAll(".sbe-target-row")].find(row => row.dataset.tokenUuid === token.uuid);
+    const row = rows.get(token.uuid);
     if (row) {
       row.querySelector(".sbe-target-flags")?.append(flagList(rollTarget(context, token).flags));
       continue;
     }
+    if (!targetFlags) {
+      targetFlags = accordion(sbsI18n("swade-better-effects.Chat.TargetFlags"), "sbe-chat-target-flags");
+      content.append(targetFlags);
+    }
+    const section = document.createElement("section"), name = document.createElement("strong");
+    name.textContent = token.name;
+    section.append(name, flagList(rollTarget(context, token).flags));
+    targetFlags.append(section);
   }
 }

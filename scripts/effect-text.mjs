@@ -25,6 +25,9 @@ async function showEffectText(token, content) {
       strokeThickness: 3,
    })
    text.anchor.set(0.5, 1)
+   // Match Foundry's scrolling-text overlay, above token interface layers.
+   text.zIndex = CONFIG.Canvas.groups.interface.zIndexScrollingText
+   text.eventMode = "none"
    text.scale.set(scale)
    text.alpha = 0
    const motion = { progress: 0 }

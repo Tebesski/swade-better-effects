@@ -16,11 +16,16 @@ export function normalizePattern(value) {
     .replace(/[^a-z0-9*]+/g, "-").replace(/^-+|-+$/g, "").replace(/\*+/g, "*").slice(0, 80).replace(/-+$/g, "");
 }
 
-export function matchesFlag(pattern, flags) {
+export function flagMatcher(pattern) {
   const normalized = normalizePattern(pattern);
-  if (!normalized) return false;
+  if (!normalized) return () => false;
+  if (!normalized.includes("*")) return flag => flag === normalized;
   const expression = new RegExp(`^${normalized.split("*").join(".*")}$`);
-  return normalizeFlags(flags).some(flag => expression.test(flag));
+  return flag => expression.test(flag);
+}
+
+export function matchesFlag(pattern, flags) {
+  return normalizeFlags(flags).some(flagMatcher(pattern));
 }
 
 export function validatePredicate(node, depth = 0) {
@@ -33,13 +38,22 @@ export function validatePredicate(node, depth = 0) {
 
 export function testPredicate(node, context = {}, depth = 0) {
   if (!validatePredicate(node, depth)) return false;
-  // An absent roll context must never make IF NOT silver into an unconditional resistance.
-  if (["flag", "not"].includes(node.op) && needsContext(node) && !context.hasRoll) return false;
-  if (["flag", "not"].includes(node.op) && needsOpposedContext(node) && !Array.isArray(context.opposed)) return false;
-  if (node.op === "flag") return matchesFlag(node.flag, context[node.source]);
-  if (node.op === "not") return !testPredicate(node.child, context, depth + 1);
-  return node.op === "all" ? node.children.every(c => testPredicate(c, context, depth + 1))
-    : node.children.some(c => testPredicate(c, context, depth + 1));
+  const normalized = new Map();
+  const hasOpposed = Array.isArray(context.opposed);
+  function evaluate(entry) {
+    // A missing roll must never make IF NOT silver an unconditional resistance.
+    if (entry.op === "flag" || entry.op === "not") {
+      if (!context.hasRoll && needsContext(entry)) return false;
+      if (!hasOpposed && needsOpposedContext(entry)) return false;
+    }
+    if (entry.op === "flag") {
+      if (!normalized.has(entry.source)) normalized.set(entry.source, normalizeFlags(context[entry.source]));
+      return normalized.get(entry.source).some(flagMatcher(entry.flag));
+    }
+    if (entry.op === "not") return !evaluate(entry.child);
+    return entry.op === "all" ? entry.children.every(evaluate) : entry.children.some(evaluate);
+  }
+  return evaluate(node);
 }
 
 function needsOpposedContext(node) {
@@ -63,6 +77,11 @@ export function predicateFlags(node) {
 export const emptyPredicate = () => ({op: "all", children: []});
 export const hasCondition = p => p && !(p.op === "all" && !p.children?.length);
 
+// Owner flags are available during actor preparation. These changes belong in
+// the actor's normal stats, rather than being added again at roll resolution.
+export const isOwnerCondition = (change, predicate) => hasCondition(predicate) && !needsContext(predicate)
+  && (change.key.startsWith("system.") || change.key.startsWith("@Skill{"));
+
 export function changeSignature(change) {
   return JSON.stringify([change.key, change.type ?? "add", String(change.value ?? ""), change.phase ?? "initial", change.priority ?? null]);
 }
@@ -70,6 +89,11 @@ export function changeSignature(change) {
 export function conditionFor(change, index, conditions = []) {
   const entry = conditions[index];
   return entry?.signature === changeSignature(change) ? entry.predicate : undefined;
+}
+
+export function customChangeName(change, index, conditions = []) {
+  const entry = conditions[index];
+  return entry?.signature === changeSignature(change) && typeof entry.customName === "string" ? entry.customName.trim() : "";
 }
 
 export function selectorForKey(key) {

@@ -6,8 +6,11 @@ import {actorWithDefense, prepareDamage, resolveMessageDamage} from "./damage.mj
 import {hasDamageApplications, setToolsApplicationAttackHit} from "./applications.mjs";
 import {wrapMethod} from "./effects.mjs";
 import {damageAP, isDamageMessage, isTraitMessage, makeContext, messageContext, setRollContext, traitAdjustment} from "./roll-context.mjs";
-import {isFlagSuppressed} from "./default-flags.mjs";
+import {isFlagSuppressed, isModifierSuppressed} from "./default-flags.mjs";
+import {rollRestricted} from "./restrictions.mjs";
 import {moduleScriptBase} from "./module-imports.mjs";
+import {setInlineAttackOutcome, setInlineDamageDefense} from "./inline-damage.mjs";
+import {toolsDamageHits} from "./inline-damage-data.mjs";
 
 // Keep SWADE Tools' target labels, application handlers, and soak workflow. Supply an
 // equivalent defense only while its synchronous target calculation is running.
@@ -21,13 +24,23 @@ export async function initializeSwadeTools() {
       import(new URL("scripts/class/BasicRoll.js", base).href),
       import(new URL("scripts/class/CharRoll.js", base).href)
     ]);
+    setInlineDamageDefense((actor, area) => {
+      if (actor.type === "vehicle") return {toughness: actor.system.toughness.total, armor: actor.system.toughness.armor};
+      const armor = gb.getArmorArea(actor, area) ?? gb.getArmorArea(actor);
+      return {armor, toughness: actor.system.stats.toughness.value - gb.getArmorArea(actor) + armor};
+    });
+    wrapMethod(CharRoll.prototype, "addModifier", function (original, value, label) {
+      if (isModifierSuppressed(this.actor, {label})) return;
+      return original(value, label);
+    });
     wrapMethod(CharRoll.prototype, "baseModifiers", function (original, damage = false) {
-      if (damage || !isFlagSuppressed(this.actor, "fatigue")) return original(damage);
-      // Tools reads the counter directly. Give this synchronous calculation a
-      // view with no fatigue penalty, preserving the real counter and wounds.
+      const fatigue = isFlagSuppressed(this.actor, "fatigue"), wounds = isFlagSuppressed(this.actor, "wounds");
+      if (damage || !fatigue && !wounds) return original(damage);
+      // Tools reads counters directly before applying its shared allowance.
+      // Suppress the relevant penalty before it consumes that allowance.
       const actor = this.actor;
       const system = new Proxy(actor.system, {get(target, key) {
-        if (key === "fatigue") return {...target.fatigue, ignored: target.fatigue.value};
+        if (key === "fatigue" && fatigue || key === "wounds" && wounds) return {...target[key], ignored: target[key].value};
         return Reflect.get(target, key);
       }});
       this.actor = new Proxy(actor, {get(target, key) {
@@ -38,9 +51,23 @@ export async function initializeSwadeTools() {
       try { return original(damage); } finally { this.actor = actor; }
     });
     wrapMethod(CharRoll.prototype, "rollAtt", function (original, attribute, ...args) {
+      if (rollRestricted(this.actor, () => makeContext(this.actor, this.item, [], {kind: "trait", attribute}), this.item)) return null;
       this.sbeAttribute = attribute;
       this.addFlag("attribute", attribute);
       return original(attribute, ...args);
+    });
+    wrapMethod(CharRoll.prototype, "rollSkill", function (original, name, ...args) {
+      if (rollRestricted(this.actor, () => {
+        const skill = this.actor.items.find(item => item.type === "skill" && item.name === name);
+        const context = makeContext(this.actor, this.item, [], {kind: "trait", skill});
+        if (skill) context.skill.swid = skill.system.swid;
+        return context;
+      }, this.item)) return null;
+      return original(name, ...args);
+    });
+    wrapMethod(CharRoll.prototype, "rollDamage", function (original, ...args) {
+      if (rollRestricted(this.actor, () => makeContext(this.actor, this.item), this.item)) return null;
+      return original(...args);
     });
     wrapMethod(BasicRoll.prototype, "buildRoll", async function (original, die, wild, modifier, rof) {
       if (!this.actor || !this.skillName && !this.sbeAttribute) return original(die, wild, modifier, rof);
@@ -93,6 +120,25 @@ export async function initializeSwadeTools() {
       if (!results?.length) return;
       for (const [index, total] of results.entries()) control.attackTarget(token.object, total, index + 1);
       return control.targetPrint.some(entry => /swadetools-term-(?:hit|raise)\b/.test(entry.print));
+    });
+    setInlineAttackOutcome((message, token) => {
+      const tools = message.flags["swade-tools"];
+      if (tools?.rolltype !== "skill" || !tools.itemroll || token.parent !== canvas.scene || !token.object) return;
+      const control = new RollControl(message, null, message.author);
+      control.gmmod = Number(tools.gmmod) || 0;
+      const results = Number(tools.userof) > 1 ? control.roll.terms[0]?.results?.map(entry => entry.result) : [control.roll.total];
+      if (!results?.length) return;
+      const shots = [];
+      for (const [index, total] of results.entries()) {
+        const start = control.targetPrint.length;
+        control.attackTarget(token.object, total, index + 1);
+        shots.push(control.targetPrint.slice(start).map(entry => entry.print).join(""));
+      }
+      const output = control.targetPrint.map(entry => entry.print).join("");
+      // Non-damaging base powers are intentionally skipped by the HUD's Tools guard.
+      if (!output) return;
+      const hits = toolsDamageHits(shots);
+      return {hit: hits.length > 0, raise: hits.some(hit => hit.raise), shots: hits};
     });
     wrapMethod(RollControl.prototype, "findTargets", async function (original, ...args) {
       const result = await original(...args);

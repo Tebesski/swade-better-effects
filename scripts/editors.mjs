@@ -1,9 +1,9 @@
 import {t as sbsI18n} from "./i18n.mjs";
-import {ADD_ITEM_KEY, APPLICATION_KEY, DEFENSES, EFFECT_TYPE, ICON, MAP_KEY, MODULE_ID, OPERATIONS, TEMPLATE} from "./constants.mjs";
-import {changeSignature, conditionFor, emptyPredicate, hasCondition, normalizeFlag, normalizeFlags, selectorForKey, validatePredicate} from "./rules.mjs";
+import {ADD_ITEM_KEY, APPLICATION_KEY, DEFENSES, EFFECT_TYPE, ICON, MAP_KEY, MODULE_ID, OPERATIONS, RESTRICT_KEY, SUPPRESS_KEY, TEMPLATE} from "./constants.mjs";
+import {changeSignature, conditionFor, customChangeName, emptyPredicate, hasCondition, isOwnerCondition, normalizeFlag, normalizeFlags, normalizePattern, selectorForKey, validatePredicate} from "./rules.mjs";
 import {mountPredicate} from "./predicate-ui.mjs";
 import {changeGroups} from "./change-presets.mjs";
-import {MODIFY_FLAG_KEY} from "./flag-changes.mjs";
+import {MODIFY_FLAG_KEY, suppressionFlags} from "./flag-changes.mjs";
 import {catalogFlags} from "./flags.mjs";
 import {bindFlagSuggestions} from "../../swade-better-setting/scripts/flag-suggestions.mjs";
 import {effectiveFlags, flagInputData} from "./default-flags.mjs";
@@ -12,6 +12,8 @@ import {cleanRollNote} from "./roll-notes.mjs";
 import {isDamageFormula} from "./damage-formulas.mjs";
 import {grantEquipOptions, isItemEffect, readItemGrant, resolveGrantItem} from "./item-effects.mjs";
 import {configureLingering} from "./lingering-config.mjs";
+import {configureRestriction} from "./restriction-config.mjs";
+import {validateRestriction} from "./restriction-data.mjs";
 import {configureApplication, validateApplication} from "./application-config.mjs";
 import {APPLICATION_BEHAVIOURS, APPLICATION_CONDITIONS} from "./application-data.mjs";
 
@@ -36,6 +38,7 @@ export function initializeWizard() {
         this.draft.transfer = true;
       }
       this.rows = (this.draft.system.changes ?? []).map((change, index) => ({...change,
+        customName: customChangeName(change, index, data.conditions),
         ...(change.key === ADD_ITEM_KEY ? {grant: readItemGrant(change.value)} : {}),
         ...(change.key.startsWith(NOTE_PREFIX) ? {key: noteBaseKey(change.key) ?? "", type: "note"} : {}), label: change.key,
         predicate: structuredClone(conditionFor(change, index, data.conditions) ?? data.conditions?.[index]?.predicate ?? emptyPredicate())}));
@@ -49,6 +52,12 @@ export function initializeWizard() {
       form: {handler: async function () { await this.save(); }, closeOnSubmit: false},
       actions: {
         addChange: async function (_event, target) { await this.addPreset(target); },
+        editRestriction: async function (_event, target) {
+          this.capture();
+          const row = this.rows[Number(target.closest("[data-index]").dataset.index)];
+          const value = await configureRestriction(row.value);
+          if (value) { row.value = value; this.render(); }
+        },
         editApplication: async function (_event, target) {
           this.capture();
           const row = this.rows[Number(target.closest("[data-index]").dataset.index)];
@@ -151,10 +160,11 @@ export function initializeWizard() {
       if (conditional) this.draft.system.conditionalEffect = conditional.checked;
       this.element.querySelectorAll(".sbe-change[data-index]").forEach(row => {
         const draft = this.rows[Number(row.dataset.index)];
+        draft.customName = row.querySelector(".sbe-change-name input")?.value ?? draft.customName ?? "";
         const type = row.querySelector("select.type").value;
         draft.conditionsOpen = row.querySelector(".sbe-condition-details")?.open ?? false;
         const rawValue = row.querySelector('[data-field="value"]').value;
-        if (draft.key === APPLICATION_KEY) return;
+        if ([APPLICATION_KEY, RESTRICT_KEY].includes(draft.key)) return;
         if (draft.key === ADD_ITEM_KEY) {
           draft.grant.uuid = rawValue;
           const equip = row.querySelector(".sbe-grant-equip");
@@ -188,7 +198,10 @@ export function initializeWizard() {
       };
       refreshFlags();
       flagsInput.addEventListener("change", () => { this.capture(); refreshFlags(); });
-      basics.querySelector('[name="name"]').addEventListener("input", () => { this.capture(); refreshFlags(); });
+      basics.querySelector('[name="name"]').addEventListener("input", () => {
+        this.capture(); refreshFlags();
+        for (const input of this.element.querySelectorAll(".sbe-change-name input")) input.placeholder = this.draft.name;
+      });
       fields.append(flagsInput); group.append(label, fields); basics.querySelector(".name").after(group);
       bindFlagSuggestions(flagsInput, catalogFlags, {multiple: true, normalize: normalizeFlag});
       if (this.itemEffect) {
@@ -254,17 +267,29 @@ export function initializeWizard() {
         if (row.classList.contains("sbe-change")) return;
         const draft = this.rows[Number(row.dataset.index)];
         row.classList.add("sbe-change");
+        const nameField = document.createElement("div"); nameField.className = "sbe-change-name";
+        const nameInput = document.createElement("input"); nameInput.type = "text"; nameInput.value = draft.customName ?? "";
+        nameInput.placeholder = this.draft.name;
+        nameInput.setAttribute("aria-label", sbsI18n("swade-better-effects.UI.CustomBehaviourName"));
+        nameField.append(nameInput); row.append(nameField);
         row.querySelector("select.type").dataset.field = "type";
         const value = row.querySelector("input.value");
         value.dataset.field = "value";
         value.setAttribute("aria-label", sbsI18n("swade-better-effects.UI.Changevalue_c34cd224d9"));
         const defense = Object.hasOwn(DEFENSES, draft.key) ? DEFENSES[draft.key] : null;
-        if (defense || [ADD_ITEM_KEY, APPLICATION_KEY].includes(draft.key)) {
+        if (defense || [ADD_ITEM_KEY, APPLICATION_KEY, RESTRICT_KEY].includes(draft.key)) {
           const type = row.querySelector("select.type");
           type.replaceChildren(new Option(defense ? {add: "+ Damage", subtract: "− Damage", override: sbsI18n("swade-better-effects.UI.Nodamage_061999eff3")}[defense.type] : sbsI18n("swade-better-effects.UI.Grant_78b7d0379d"), defense?.type ?? "add"));
           type.hidden = true;
           row.classList.add("sbe-special-change");
           if (draft.key === ADD_ITEM_KEY) this.mountItemReference(value, draft.grant);
+          else if (draft.key === RESTRICT_KEY) {
+            value.type = "hidden"; value.classList.remove("value");
+            const edit = document.createElement("button"); edit.type = "button"; edit.className = "value";
+            edit.dataset.action = "editRestriction";
+            edit.textContent = [...(draft.value?.traits ?? []), ...(draft.value?.rollFlags ?? [])].join(", ") || sbsI18n("swade-better-effects.UI.Restrict");
+            value.after(edit);
+          }
           else if (draft.key === APPLICATION_KEY) {
             value.type = "hidden";
             value.classList.remove("value");
@@ -297,15 +322,18 @@ export function initializeWizard() {
           if (!preview.textContent.trim() && !preview.querySelector("img")) preview.textContent = sbsI18n("swade-better-effects.UI.Clickthepentowritea_1d54227dfb");
           row.append(preview);
         }
-        if (draft.key === MODIFY_FLAG_KEY) {
+        if ([MODIFY_FLAG_KEY, SUPPRESS_KEY].includes(draft.key)) {
           row.classList.add("sbe-flag-change");
           const type = row.querySelector("select.type");
-          type.replaceChildren(new Option(sbsI18n("swade-better-effects.UI.Add_9fd728c66c"), sbsI18n("swade-better-effects.UI.add_7e9e5ac30f")), new Option(sbsI18n("swade-better-effects.UI.Suppress_60b199879b"), sbsI18n("swade-better-effects.UI.subtract_1cc624bbe4")));
+          const suppress = draft.key === SUPPRESS_KEY;
+          type.replaceChildren(...(suppress ? [new Option(sbsI18n("swade-better-effects.UI.Suppress_60b199879b"), "add")]
+            : [new Option(sbsI18n("swade-better-effects.UI.Add_9fd728c66c"), "add"), new Option(sbsI18n("swade-better-effects.UI.Suppress_60b199879b"), "subtract")]));
+          if (suppress) { draft.type = "add"; type.hidden = true; row.classList.add("sbe-special-change"); }
           type.value = draft.type;
           value.setAttribute("aria-label", sbsI18n("swade-better-effects.UI.Flagnames_47e5a289dc"));
           value.placeholder = sbsI18n("swade-better-effects.UI.poisoncursed_62ec9482fc");
-          bindFlagSuggestions(value, catalogFlags, {multiple: true, normalize: normalizeFlag});
-          value.addEventListener("change", () => { draft.value = normalizeFlags(value.value).join(", "); value.value = draft.value; });
+          bindFlagSuggestions(value, catalogFlags, {multiple: true, normalize: suppress ? normalizePattern : normalizeFlag});
+          value.addEventListener("change", () => { draft.value = (suppress ? suppressionFlags : normalizeFlags)(value.value).join(", "); value.value = draft.value; });
         }
         const group = this.changeGroups.all.find(group => group.options.some(p => p.key === draft.key));
         let choices = group?.options;
@@ -351,7 +379,7 @@ export function initializeWizard() {
           link.before(generate);
           return;
         }
-        if ([ADD_ITEM_KEY, APPLICATION_KEY].includes(draft.key)) return;
+        if ([ADD_ITEM_KEY, APPLICATION_KEY, SUPPRESS_KEY].includes(draft.key)) return;
         const details = document.createElement("details"); details.className = "sbe-condition-details"; details.open = draft.conditionsOpen ?? false;
         const summary = document.createElement("summary"); summary.textContent = sbsI18n("swade-better-effects.UI.Conditions_97d4be8960");
         const container = document.createElement("div"); container.className = "sbe-condition";
@@ -474,7 +502,7 @@ export function initializeWizard() {
         key = `@Skill{${selected.trim()}}[system.${key}]`; label = `${selected} ${label}`;
       } else if (category === "attribute") { key = `system.attributes.${selected}.${key}`; label = `${selected} ${label}`; }
       const defense = Object.hasOwn(DEFENSES, key) ? DEFENSES[key] : null;
-      const value = key === APPLICATION_KEY ? await this.configureApplication() : defense?.selector === "immunity" ? "0" : "";
+      const value = key === RESTRICT_KEY ? await configureRestriction() : key === APPLICATION_KEY ? await this.configureApplication() : defense?.selector === "immunity" ? "0" : "";
       if (value == null) return;
       this.rows.push({key, label, type: defense?.type ?? "add", value, phase: "initial", priority: null,
         predicate: emptyPredicate(), ...(key === ADD_ITEM_KEY ? {grant: {uuid: ""}} : {})});
@@ -502,6 +530,17 @@ export function initializeWizard() {
       if (this.draft.duration.value !== null && (!Number.isInteger(this.draft.duration.value) || this.draft.duration.value < 0)) throw new Error(sbsI18n("swade-better-effects.UI.Durationmustbeanonnegative_bb5bacdedc"));
       for (const row of this.rows) {
         if (!row.key?.trim()) throw new Error(sbsI18n("swade-better-effects.UI.Eachchangeneedsadatapath_859a59eb4c"));
+        if (row.key === RESTRICT_KEY) {
+          row.value = validateRestriction(row.value); row.type = "add";
+          if (!validatePredicate(row.predicate)) throw new Error(sbsI18n("swade-better-effects.UI.Completeeveryconditionchooseaflag_fe613f0ed1"));
+          continue;
+        }
+        if (row.key === SUPPRESS_KEY) {
+          row.value = suppressionFlags(row.value).join(", ");
+          if (!row.value) throw new Error(sbsI18n("swade-better-effects.UI.EnterFlagsToSuppress"));
+          row.type = "add"; row.predicate = emptyPredicate();
+          continue;
+        }
         if (row.key === APPLICATION_KEY) {
           await validateApplication(row.value);
           row.type = "add"; row.predicate = emptyPredicate();
@@ -539,17 +578,18 @@ export function initializeWizard() {
         }
         if (hasCondition(row.predicate) || row.key.startsWith("sbe.targetRoll.") || row.key.startsWith("sbe.powerRoll.") || row.key === MAP_KEY) {
           const selector = selectorForKey(row.key);
-          if (!selector || !Object.hasOwn(OPERATIONS, row.type)) throw new Error(sbsI18n("swade-better-effects.UI.Thischangedoesnotsupportautomatic_0688742af8"));
+          if ((!selector && !isOwnerCondition(row, row.predicate)) || !Object.hasOwn(OPERATIONS, row.type)) throw new Error(sbsI18n("swade-better-effects.UI.Thischangedoesnotsupportautomatic_0688742af8"));
           if (!Number.isFinite(Number(row.value))) {
             if (selector !== "outgoing-damage") throw new Error(sbsI18n("swade-better-effects.UI.Enterafinitenumberforthis_b13d8a35a2"));
             if (!isDamageFormula(row.value)) throw new Error(sbsI18n("swade-better-effects.UI.EnteravalidDamageformulasuch_72edc37ff6"));
           }
         }
       }
-      const changes = this.rows.map(({label, predicate, conditionsOpen, numericValue, noteText, grant, ...change}) => ({...change,
+      const changes = this.rows.map(({label, customName, predicate, conditionsOpen, numericValue, noteText, grant, ...change}) => ({...change,
         ...(change.type === "note" ? {key: noteChangeKey(change.key), type: "add"} : {}),
         phase: change.phase ?? "initial", priority: change.priority ?? null}));
-      const conditions = changes.map((change, index) => ({signature: changeSignature(change), predicate: this.rows[index].predicate}));
+      const conditions = changes.map((change, index) => ({signature: changeSignature(change), predicate: this.rows[index].predicate,
+        ...(this.rows[index].customName?.trim() ? {customName: this.rows[index].customName.trim()} : {})}));
       const flags = {...this.draft.flags, [MODULE_ID]: {...this.draft.flags?.[MODULE_ID], nameFlag: normalizeFlag(this.draft.name), conditions}};
       if (this.itemEffect) flags[MODULE_ID].itemEffect = true;
       const data = {name: this.draft.name, img: this.draft.img, duration: this.draft.duration, system: {...this.draft.system, changes}, flags,

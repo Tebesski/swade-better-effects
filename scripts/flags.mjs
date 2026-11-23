@@ -1,5 +1,5 @@
 import {t as sbsI18n} from "./i18n.mjs";
-import {APPLICATION_KEY, MODULE_ID, TEMPLATE} from "./constants.mjs";
+import {APPLICATION_KEY, MODULE_ID, RESTRICT_KEY, SUPPRESS_KEY, TEMPLATE} from "./constants.mjs";
 import {normalizeFlag, normalizeFlags, predicateFlags} from "./rules.mjs";
 import {ancestryFlag, effectiveFlags, excludedFlags, flagActivation, flagInputData, flagsAfterAncestryChange, flagsAfterEquipmentChange, isGear, STANDARD_FLAGS} from "./default-flags.mjs";
 import {MODIFY_FLAG_KEY} from "./flag-changes.mjs";
@@ -62,8 +62,9 @@ async function savePendingFlags() {
 export function flagsInDocument(document) {
   const data = document.flags?.[MODULE_ID] ?? {};
   return normalizeFlags([...documentFlags(document), ...(data.context?.roll ?? []), ...(data.conditions ?? []).flatMap(c => predicateFlags(c?.predicate)),
-    ...(document.system?.changes ?? []).flatMap(change => change.key === MODIFY_FLAG_KEY ? normalizeFlags(change.value)
-      : change.key === APPLICATION_KEY ? normalizeFlags(change.value?.flags) : []),
+    ...(document.system?.changes ?? []).flatMap(change => [MODIFY_FLAG_KEY, SUPPRESS_KEY].includes(change.key) ? String(change.value ?? "").split(",").filter(flag => !flag.includes("*")).flatMap(normalizeFlags)
+      : change.key === APPLICATION_KEY ? normalizeFlags(change.value?.flags)
+      : change.key === RESTRICT_KEY ? (change.value?.rollFlags ?? []).filter(flag => !flag.includes("*")).flatMap(normalizeFlags) : []),
     ...(data.rules ?? []).flatMap(r => predicateFlags(r.predicate))]);
 }
 

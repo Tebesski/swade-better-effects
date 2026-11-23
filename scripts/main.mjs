@@ -21,6 +21,8 @@ import {registerLingeringEffects} from "./lingering.mjs";
 import {registerEffectDurations} from "./effect-duration.mjs";
 import {installEffectText} from "./effect-text.mjs";
 import {registerApplications} from "./applications.mjs";
+import {installEffectImports} from "./effect-import.mjs";
+import {installRestrictions} from "./restrictions.mjs";
 
 class EffectTemplateData extends foundry.abstract.TypeDataModel {
   static defineSchema() { return {description: new foundry.data.fields.HTMLField()}; }
@@ -43,6 +45,7 @@ Hooks.once("init", () => {
     icon: "fa-solid fa-tags", type: FlagLibrary, restricted: true});
   CONFIG.queries[`${MODULE_ID}.resolveDamage`] = openDamageRequest;
   registerFlagHooks(); registerRollHooks();
+  installRestrictions();
   registerItemGrants();
   registerImmunityNotices();
   installConditionGate();
@@ -67,6 +70,7 @@ Hooks.once("init", () => {
 Hooks.once("setup", async () => {
   const NativeWizard = game.swade.apps.ActiveEffectWizard;
   initializeWizard(); installSheetDrops(); registerCanvasDrops(); installMapDialog(); installOpposedRolls();
+  installEffectImports();
   installInitiativeChat();
   Hooks.on("renderActiveEffectWizard", app => {
     if (app.constructor === NativeWizard && app.document?.isOwner) { app.close(); openAegis(app.document); }

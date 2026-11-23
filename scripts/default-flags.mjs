@@ -1,12 +1,15 @@
 import {t as sbsI18n} from "./i18n.mjs";
 import {normalizeFlag, normalizeFlags} from "./rules.mjs";
-import {applyFlagChanges, suppressesFlag} from "./flag-changes.mjs";
+import {applyFlagChanges, suppressionMatcher, suppressesFlag} from "./flag-changes.mjs";
 
 export const EQUIPMENT_FLAGS = ["stored", "carried", "equipped", "off-hand", "main-hand", "two-hands"];
+const LIGHT_FLAGS = ["bright-light", "dim-light", "dark-light", "pitch-dark-light"];
 const CARD_RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king", "ace"];
 const JOKER_RANKS = {96: "green-joker", 97: "blue-joker", 98: "black-joker", 99: "red-joker"};
-export const STANDARD_FLAGS = ["attack", "damage", "trait", "opposed", "support", "test", "success", "fail", "critical-failure", "raise-1", "power-preparation", "power-maintain", "attribute", "skill", "power", "weapon", "melee", "ranged", "gear", "armor", "shield", "consumable", "edge", "hindrance", "ability", "ancestry", "wildcard", "extra", "agility", "smarts", "spirit", "strength", "vigor", ...EQUIPMENT_FLAGS,
-  "card-face", "card-number", "card-joker", ...[...CARD_RANKS, ...Object.values(JOKER_RANKS)].map(rank => `card-${rank}`)];
+export const STANDARD_FLAGS = ["wounds", "fatigue", "distracted", "encumbered", "conviction", "joker", "attack", "damage", "trait", "opposed", "support", "test", "success", "fail", "critical-failure", "raise-1", "power-preparation", "power-maintain", "attribute", "skill", "power", "weapon", "melee", "ranged", "gear", "armor", "shield", "consumable", "edge", "hindrance", "ability", "ancestry", "wildcard", "extra", "agility", "smarts", "spirit", "strength", "vigor", ...EQUIPMENT_FLAGS,
+  ...LIGHT_FLAGS, ...LIGHT_FLAGS.slice(1).map(flag => `${flag}-penalty`),
+  ...["light", "medium", "heavy", "near-total"].flatMap(level => [`${level}-cover`, `${level}-cover-penalty`]),
+  "shake-off", "opposed-roll", "card-face", "card-number", "card-joker", ...[...CARD_RANKS, ...Object.values(JOKER_RANKS)].map(rank => `card-${rank}`)];
 const physical = new Set(["weapon", "armor", "shield", "gear", "consumable"]);
 export const isGear = doc => doc?.documentName === "Item" && physical.has(doc.type);
 export const customFlags = doc => normalizeFlags(doc?.getFlag?.("swade-better-effects", "tags") ?? doc?.flags?.["swade-better-effects"]?.tags ?? []);
@@ -56,16 +59,48 @@ export function automaticFlags(doc, token) {
 }
 
 export function ancestryFlag(doc) {
-  const ancestry = [...(doc.items ?? [])].find(item => item.type === "ancestry");
-  return normalizeFlag(ancestry?.name ?? doc.system.details?.species?.name);
+  for (const item of doc.items ?? []) {
+    if (item.type === "ancestry") return normalizeFlag(item.name ?? doc.system.details?.species?.name);
+  }
+  return normalizeFlag(doc.system.details?.species?.name);
 }
 
 function flagEffects(doc) {
   if (doc?.documentName !== "Actor") return [];
-  return [...(doc.allApplicableEffects?.() ?? doc.effects ?? [])].filter(effect => !isGear(effect.parent) || itemGrantsFlags(effect.parent));
+  const effects = [];
+  for (const effect of doc.allApplicableEffects?.() ?? doc.effects ?? []) {
+    if (!isGear(effect.parent) || itemGrantsFlags(effect.parent)) effects.push(effect);
+  }
+  return effects;
 }
 
 export function isFlagSuppressed(doc, flag) { return suppressesFlag(flagEffects(doc), flag); }
+
+// Native modifiers have labels rather than flags. Give standard penalties stable
+// names across languages, and accept explicit flags supplied by integrations.
+export function modifierFlags(modifier = {}) {
+  const label = String(modifier.label ?? "");
+  const canonical = {"SWADE.Wounds": "wounds", "SWADE.Fatigue": "fatigue", "SWADE.Distr": "distracted",
+    "SWADE.Encumbered": "encumbered", "SWADE.Conv": "conviction", "SWADE.Joker": "joker"};
+  const flags = Array.isArray(modifier.flags) || typeof modifier.flags === "string" ? modifier.flags
+    : modifier.flags?.["swade-better-effects"]?.tags;
+  return normalizeFlags([label, ...normalizeFlags(flags), ...normalizeFlags(modifier.tags), ...Object.entries(canonical)
+    .filter(([key]) => label === key || label === globalThis.game?.i18n?.localize(key)).map(([, flag]) => flag)]);
+}
+
+export function isModifierSuppressed(actor, modifier) {
+  const matches = suppressionMatcher(flagEffects(actor));
+  return matches ? modifierFlags(modifier).some(matches) : false;
+}
+
+export function filterSuppressedModifiers(actor, modifiers) {
+  if (!modifiers.length) return modifiers;
+  const matches = suppressionMatcher(flagEffects(actor));
+  if (matches) for (let i = modifiers.length - 1; i >= 0; i--) {
+    if (modifierFlags(modifiers[i]).some(matches)) modifiers.splice(i, 1);
+  }
+  return modifiers;
+}
 
 function suppliedFlags(doc, token) {
   let flags = normalizeFlags([...automaticFlags(doc, token), ...customFlags(doc)]);
@@ -77,8 +112,11 @@ function suppliedFlags(doc, token) {
 }
 
 export function effectiveFlags(doc, token) {
+  if (!doc) return [];
   const excluded = new Set(excludedFlags(doc));
-  return suppliedFlags(doc, token).filter(flag => !excluded.has(flag));
+  const flags = suppliedFlags(doc, token);
+  globalThis.Hooks?.callAll("swadeBetterEffectsDocumentFlags", doc, token, flags);
+  return normalizeFlags(flags).filter(flag => !excluded.has(flag));
 }
 
 export function flagInputData(doc, value) {

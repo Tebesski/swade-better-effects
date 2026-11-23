@@ -1,11 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {applyFlagChanges, effectFlags, resolveEffectState, MODIFY_FLAG_KEY} from "../scripts/flag-changes.mjs";
+import {applyFlagChanges, effectFlags, resolveEffectState, scopedSuppression, withSuppressionScope, MODIFY_FLAG_KEY} from "../scripts/flag-changes.mjs";
 import {effectiveFlags, flagInputData, isFlagSuppressed} from "../scripts/default-flags.mjs";
 const scope = "swade-better-effects";
 const effect = (name, tags = [], changes = []) => ({documentName: "ActiveEffect", name, active: true,
   flags: {[scope]: {tags}}, system: {changes}});
 const suppress = flag => ({key: MODIFY_FLAG_KEY, type: "subtract", value: flag});
+
+test("suppression reads reuse one graph per synchronous pass and see changes on the next pass", () => {
+  const poison = effect("Poison"), ward = effect("Ward", [], [suppress("poison")]);
+  const actor = {effects: [poison, ward]};
+  let reads = 0;
+  const read = () => scopedSuppression(actor, () => {
+    reads++;
+    return resolveEffectState(actor.effects).suppressed;
+  });
+  withSuppressionScope(actor, () => {
+    assert.equal(read().has(poison), true);
+    assert.equal(withSuppressionScope(actor, read).has(ward), false);
+    assert.equal(reads, 1);
+  });
+  ward.disabled = true;
+  assert.equal(withSuppressionScope(actor, read).has(poison), false);
+  assert.equal(reads, 2);
+});
 
 test("fatigue suppression can be detected without any fatigue effect or actor flag", () => {
   const drink = effect("Energy Drink", [], [suppress("fatigue")]);

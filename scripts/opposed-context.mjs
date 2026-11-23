@@ -3,8 +3,8 @@ import {normalizeFlags} from "./rules.mjs";
 
 export function withOpposition(context, opposition) {
   if (!opposition) return context;
-  return {...context, rollKinds: normalizeFlags([...context.roll, "opposed"]),
-    roll: normalizeFlags([...context.roll, ...opposition.flags, "opposed"]), opposed: normalizeFlags(opposition.flags),
+  return {...context, rollKinds: normalizeFlags([...context.roll, "opposed", "opposed-roll"]),
+    roll: normalizeFlags([...context.roll, ...opposition.flags, "opposed", "opposed-roll"]), opposed: normalizeFlags(opposition.flags),
     targetUuids: opposition.tokenUuid ? [opposition.tokenUuid] : [], opposition: structuredClone(opposition)};
 }
 
