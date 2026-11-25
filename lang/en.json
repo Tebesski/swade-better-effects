@@ -17,7 +17,16 @@
     "ImmuneToEffect": "{name} is immune to {effect}{flags}."
   },
   "swade-better-effects": {
+    "AttackOutcome": {
+      "failure": "Failure",
+      "success": "Success",
+      "raise": "Raised!"
+    },
     "UI": {
+      "EffectVisibility": "Effect visibility",
+      "HideCompletely": "Hide completely",
+      "HideOnToken": "Hide on token",
+      "ShowEverywhere": "Show everywhere",
       "Dropamacroyoucanexecute_2d961bf042": "Drop a macro you can execute.",
       "Application_e7ad522ea3": "Application",
       "SaveApplication_168097d17a": "Save Application",
@@ -461,6 +470,7 @@
       "TargetFlags": "Target flags"
     },
     "InlineDamage": {
+      "Unlock": "Right-click to unlock damage.",
       "Damage": "Damage",
       "Roll": "Roll damage (right-click: one roll for all targets)",
       "Resolve": "Resolve damage against this target",

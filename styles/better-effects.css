@@ -83,6 +83,9 @@
 .sbe-aegis .main-grid { column-gap: 12px; row-gap: 8px; overflow: hidden; }
 .sbe-aegis .main-grid > header h2 { font-size: 1.12em !important; margin: 0 0 4px !important; line-height: 1.3; }
 .sbe-aegis .preview > h2, .sbe-aegis .presets > h2 { font-size: 1.3em !important; line-height: 1.25; margin: 0 0 8px !important; }
+.sbe-aegis .sbe-preview-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.sbe-aegis .sbe-preview-header > h2 { font-size: 1.3em !important; line-height: 1.25; margin: 0 !important; }
+.sbe-aegis .sbe-preview-header > select { flex: 0 1 165px; min-width: 0; }
 .sbe-aegis *, .sbe-aegis *::before, .sbe-aegis *::after, .sbe-aegis details::details-content { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 .sbe-aegis .effect-basics { grid-template-columns: 56px minmax(190px, .9fr) minmax(220px, 1.1fr); grid-template-areas: "icon name name" "icon flags flags" "icon turns behavior" ". lingering lingering"; padding: 0; gap: 6px 10px; align-items: center; }
 .sbe-aegis .effect-basics.sbe-passive-basics { grid-template-areas: "icon name name" "icon flags flags" ". lingering lingering"; }

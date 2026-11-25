@@ -40,6 +40,21 @@ async function saveResolution({messageId, targetUuid, resultKey, state, final}, 
   await message.setFlag(MODULE_ID, `damageResolutions.${token.id}`, {resultKey, state, final: !!final});
 }
 
+async function unlockResolution({messageId, targetUuid, resultKey}, {user}) {
+  const message = game.messages.get(messageId), token = foundry.utils.fromUuidSync(targetUuid);
+  const allowed = user?.isGM || token?.actor?.testUserPermission(user, "OWNER");
+  if (!message || !allowed || !messageTargets(message, messageContext(message)).some(target => target.uuid === targetUuid)) throw new Error(text("Unavailable"));
+  if (resultKey !== resolutionKey(message, token)) return;
+  await message.unsetFlag(MODULE_ID, `damageResolutions.${token.id}`);
+}
+
+export async function unlockDamageResolution(message, token) {
+  const request = {messageId: message.id, targetUuid: token.uuid, resultKey: resolutionKey(message, token)};
+  if (game.user.isGM || message.isOwner) return unlockResolution(request, {user: game.user});
+  if (game.users.activeGM) return game.users.activeGM.query(`${RESOLUTION_QUERY}.unlock`, request);
+  throw new Error(text("NeedsGM"));
+}
+
 export async function recordDamageResolution(message, token, state, final = true) {
   token = token?.document ?? token;
   if (!message?.id || !token?.actor) return;
@@ -63,7 +78,9 @@ export function inlineDamageOptions(message, action, preview = false) {
   const variant = item.system.actions?.additional?.[action];
   const formula = variant?.type === "damage" && variant.override || item.system.damage;
   if (projected?.hasDamage) return projected;
-  return formula?.trim() ? {hasDamage: true, formula, options: {dmgOverride: formula, additionalMods: []}} : null;
+  const projection = formula?.trim() ? {hasDamage: true, formula, options: {dmgOverride: formula, additionalMods: []}} : null;
+  if (projection) Hooks.callAll("swadeBetterEffectsInlineDamageOptions", message, projection);
+  return projection;
 }
 
 export function inlineDamageActions(message) {
@@ -174,7 +191,7 @@ async function performRoll(message, targetUuid, allTargets, damageAction) {
   if (variant?.modifier) options.additionalMods.push({label: variant.name, value: variant.modifier});
   if (outcome.raise) options.additionalMods.push({label: game.i18n.localize("SWADE.BonusDamage"),
     value: `+${item.system.bonusDamageDice ?? 1}d${item.system.bonusDamageDie ?? 6}x`});
-  const roll = await item.rollDamage({...options, suppressChat: true, sbeInlineTargetUuid: targetUuid,
+  const roll = await item.rollDamage({...options, suppressChat: false, sbeInlineTargetUuid: targetUuid,
     ap: variant?.ap, isHeavyWeapon: variant?.isHeavyWeapon, sbsTargetingAction: action,
     effectFlags: (messageContext(message).roll ?? []).filter(flag => !/^(?:trait|skill|attribute|success|fail|critical-failure|raise-\d+)$/.test(flag))});
   if (!roll) return;
@@ -188,7 +205,7 @@ async function performRoll(message, targetUuid, allTargets, damageAction) {
     updateSource: changes => Object.entries(changes).forEach(([path, value]) => foundry.utils.setProperty(snapshot, path, value))};
   await snapshotDamageFormulas(snapshot);
   setRollContext(roll, snapshot.flags[MODULE_ID].context);
-  await roll.evaluate();
+  if (!roll._evaluated) await roll.evaluate();
   return persistRoll(message, targetUuid, recipients, roll, snapshot.flags[MODULE_ID].context, {action, raise: outcome.raise, shot: outcome.shot});
 }
 
@@ -201,6 +218,10 @@ async function persistRoll(message, targetUuid, recipients, roll, context, metad
 }
 
 export function registerInlineDamage() {
+  CONFIG.queries[`${RESOLUTION_QUERY}.unlock`] = (request, context) => {
+    if (!game.user.isGM) throw new Error(text("NeedsGM"));
+    return unlockResolution(request, context);
+  };
   CONFIG.queries[RESOLUTION_QUERY] = (request, context) => {
     if (!game.user.isGM) throw new Error(text("NeedsGM"));
     return saveResolution(request, context);

@@ -10,6 +10,7 @@ import {moduleScriptBase} from "./module-imports.mjs";
 import {damageRulesForTarget} from "./damage-formulas.mjs";
 import {damageApplied, hasDamageApplications} from "./applications.mjs";
 import {inlineDamageMessage, inlineDamageDefense, recordDamageResolution, damageResolution, resolutionKey} from "./inline-damage.mjs";
+import {applyDamageWounds} from "./damage-state.mjs";
 
 let TargetedAdapter;
 let targetedInitialization;
@@ -85,8 +86,8 @@ async function loadTargetedDamage() {
     const {TargetedDamageApplicator: Base} = await import(new URL("modules/TargetedDamageApplicator.mjs", base).href);
     TargetedAdapter = class ConditionalTargetedDamageApplicator extends Base {
       static DEFAULT_OPTIONS = {classes: ["sbe-targeted-adapter"], actions: {
-        takeWounds: async function (...args) { await this.finishDamage(Base.DEFAULT_OPTIONS.actions.takeWounds, args); },
-        applyShaken: async function (...args) { await this.finishDamage(Base.DEFAULT_OPTIONS.actions.applyShaken, args); },
+        takeWounds: async function (...args) { await this.finishDamage(this.takeRemainingWounds, args); },
+        applyShaken: async function (...args) { await this.finishDamage(this.takeRemainingWounds, args); },
         noDamage: async function (...args) { await this.finishDamage(Base.DEFAULT_OPTIONS.actions.noDamage, args, "none"); }
       }};
       static PARTS = {summary: {template: `${TEMPLATE}/damage-summary.hbs`}, ...Base.PARTS};
@@ -115,6 +116,16 @@ async function loadTargetedDamage() {
       async _prepareContext(...args) { return {...await super._prepareContext(...args), sbe: this.sbeValues}; }
       applyShaken() {
         return this.shakenUpdate = super.applyShaken();
+      }
+      async takeRemainingWounds() {
+        // Creating Shaken can reprepare an Extra and rerender the app. Keep the
+        // submitted number stable across those asynchronous document changes.
+        const wounds = Math.max(0, this.object.wounds);
+        await this.applyShaken();
+        if (wounds) await applyDamageWounds(super.actor, this.options.token, wounds);
+        await this.outputChat(game.i18n.format(wounds ? "SWADETargetedDamage.Result.ShakenWithWounds" : "SWADETargetedDamage.Result.Shaken",
+          {name: super.actor.name, wounds: String(wounds)}));
+        await this.close();
       }
       async finishDamage(action, args, state = "damaged") {
         if (this.sbeApplying) return;
@@ -213,29 +224,27 @@ export class ConditionalDamageApplicator extends foundry.applications.api.Handle
     if (this.applying || !this.actor.isOwner) return;
     this.readInputs(); this.evaluate(); this.applying = true;
     try {
+      const remaining = this.remaining, result = {...this.result};
       const wasShaken = this.actor.statuses.has("shaken");
-      const context = {damage: {total: this.values.damage, ap: this.values.ap}, status: this.result.status,
-        wounds: {applied: this.result.wounds, taken: this.remaining, soaked: this.bestSoak}, isHeavyWeapon: damageIsHeavyWeapon(this.message),
-        flags: this.values.flags, doubleShaken: this.result.wounds === 1 && this.values.damage < this.values.effectiveToughness + 4 && !!this.actor.system.status?.isShaken};
-      if (Hooks.call("swadePreCalcWounds", this.actor, context, this.remaining, this.result.status) === false) return;
-      if (this.remaining) {
-        const wounds = this.actor.system.wounds;
-        const total = wounds.value + this.remaining;
-        await this.actor.update({"system.wounds.value": Math.min(wounds.max, total)});
-        if (total > wounds.max) await ensureStatus(this.actor, "incapacitated", true);
+      const context = {damage: {total: this.values.damage, ap: this.values.ap}, status: result.status,
+        wounds: {applied: result.wounds, taken: remaining, soaked: this.bestSoak}, isHeavyWeapon: damageIsHeavyWeapon(this.message),
+        flags: this.values.flags, doubleShaken: result.wounds === 1 && this.values.damage < this.values.effectiveToughness + 4 && !!this.actor.system.status?.isShaken};
+      if (Hooks.call("swadePreCalcWounds", this.actor, context, remaining, result.status) === false) return;
+      if (remaining) {
+        await applyDamageWounds(this.actor, this.token, remaining);
       }
-      const fullySoaked = this.attemptedSoak && this.bestSoak >= this.result.wounds && this.result.wounds > 0;
+      const fullySoaked = this.attemptedSoak && this.bestSoak >= result.wounds && result.wounds > 0;
       if (fullySoaked) await ensureStatus(this.actor, "shaken", false);
-      else if (this.result.status !== "none") await ensureStatus(this.actor, "shaken", true);
-      if (this.remaining && this.actor.isWildcard && game.settings.get("swade", "grittyDamage") && !context.doubleShaken) {
+      else if (result.status !== "none") await ensureStatus(this.actor, "shaken", true);
+      if (remaining && this.actor.isWildcard && game.settings.get("swade", "grittyDamage") && !context.doubleShaken) {
         const uuid = game.settings.get("swade", "injuryTable");
         if (uuid) await (await foundry.utils.fromUuid(uuid))?.draw();
       }
       Hooks.callAll("swadeTakeDamage", this.actor, context);
-      const summary = await foundry.applications.handlebars.renderTemplate(`${TEMPLATE}/damage-result.hbs`, {name: this.actor.name, remaining: this.remaining, fullySoaked, shaken: !fullySoaked && this.result.status !== "none", sbe: this.values});
+      const summary = await foundry.applications.handlebars.renderTemplate(`${TEMPLATE}/damage-result.hbs`, {name: this.actor.name, remaining, fullySoaked, shaken: !fullySoaked && result.status !== "none", sbe: this.values});
       await CONFIG.ChatMessage.documentClass.create({speaker: CONFIG.ChatMessage.documentClass.getSpeaker({actor: this.actor}), content: summary}, {messageMode: game.settings.get("core", "messageMode")});
-      const applied = {shaken: !wasShaken && this.actor.statuses.has("shaken"), wounds: this.remaining};
-      this.sbeOutcome = fullySoaked ? "soaked" : this.remaining || this.result.status !== "none" ? "damaged" : "none";
+      const applied = {shaken: !wasShaken && this.actor.statuses.has("shaken"), wounds: remaining};
+      this.sbeOutcome = fullySoaked ? "soaked" : remaining || result.status !== "none" ? "damaged" : "none";
       await recordDamageResolution(this.message, this.token, this.sbeOutcome);
       await this.close();
       if (this.sbeApplications) await damageApplied(this.message, this.token, applied);

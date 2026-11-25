@@ -28,6 +28,8 @@ export function initializeWizard() {
       super({document});
       this.effect = effect;
       this.draft = effect?.toObject() ?? {name: document.name, img: document.img || ICON, type: "base", system: {changes: []}, duration: {value: null, units: "rounds", expiry: null}, transfer: document.documentName === "Item" && document.type !== "power"};
+      // The Item owns the template name, including copies made before name sync.
+      if (document.type === EFFECT_TYPE && document.effects.size === 1) this.draft.name = document.name;
       if (!this.draft.duration?.units || this.draft.duration.units === "seconds") {
         this.draft.duration = {...this.draft.duration, units: "rounds"};
       }
@@ -152,6 +154,12 @@ export function initializeWizard() {
         this.draft.flags[MODULE_ID] = {...this.draft.flags[MODULE_ID], ...next};
       }
       this.draft.name = value("name") ?? this.draft.name;
+      const visibility = value("sbe.visibility");
+      if (visibility !== undefined) {
+        this.draft.showIcon = visibility === "both" ? CONST.ACTIVE_EFFECT_SHOW_ICON.ALWAYS : CONST.ACTIVE_EFFECT_SHOW_ICON.NEVER;
+        this.draft.flags ??= {};
+        this.draft.flags["swade-hud"] = {...this.draft.flags["swade-hud"], showInEffectPanels: visibility === "panel"};
+      }
       const duration = value("duration.value");
       if (duration !== undefined) this.draft.duration = {...this.draft.duration, value: duration === "" ? null : Number(duration), units: value("duration.units") ?? this.draft.duration.units};
       const expiry = value("duration.expiry");
@@ -257,12 +265,24 @@ export function initializeWizard() {
         const siblings = [...button.parentElement.querySelectorAll("button")];
         // The same three native component choices move into the preview dropdown.
         if (siblings.length === 3) {
-          siblings[0].textContent = game.i18n.localize(button.closest("details").dataset.category === "skill" ? "SWADE.Skill" : "SWADE.Attribute");
+          siblings[0].textContent = game.i18n.localize(button.closest("details").dataset.category === "skill" ? "TYPES.Item.skill" : "SWADE.Attribute");
           siblings.slice(1).forEach(b => b.remove());
         }
       }
       this.mountChangeSearch(presets, context);
       const preview = this.element.querySelector(".preview");
+      if (!preview.querySelector(".sbe-preview-header")) {
+        const heading = preview.querySelector(":scope > h2");
+        const header = document.createElement("div"); header.className = "sbe-preview-header";
+        const visibility = document.createElement("select"); visibility.name = "sbe.visibility";
+        visibility.setAttribute("aria-label", sbsI18n("swade-better-effects.UI.EffectVisibility"));
+        for (const [value, key] of [["hidden", "HideCompletely"], ["panel", "HideOnToken"], ["both", "ShowEverywhere"]]) {
+          visibility.add(new Option(sbsI18n(`swade-better-effects.UI.${key}`), value));
+        }
+        visibility.value = this.draft.showIcon === CONST.ACTIVE_EFFECT_SHOW_ICON.NEVER
+          ? (this.draft.flags?.["swade-hud"]?.showInEffectPanels === true ? "panel" : "hidden") : "both";
+        heading.before(header); header.append(heading, visibility);
+      }
       preview.querySelectorAll(".changes-list > li[data-index]").forEach(row => {
         if (row.classList.contains("sbe-change")) return;
         const draft = this.rows[Number(row.dataset.index)];
@@ -592,7 +612,7 @@ export function initializeWizard() {
         ...(this.rows[index].customName?.trim() ? {customName: this.rows[index].customName.trim()} : {})}));
       const flags = {...this.draft.flags, [MODULE_ID]: {...this.draft.flags?.[MODULE_ID], nameFlag: normalizeFlag(this.draft.name), conditions}};
       if (this.itemEffect) flags[MODULE_ID].itemEffect = true;
-      const data = {name: this.draft.name, img: this.draft.img, duration: this.draft.duration, system: {...this.draft.system, changes}, flags,
+      const data = {name: this.draft.name, img: this.draft.img, showIcon: this.draft.showIcon ?? CONST.ACTIVE_EFFECT_SHOW_ICON.ALWAYS, duration: this.draft.duration, system: {...this.draft.system, changes}, flags,
         ...(this.itemEffect ? {transfer: true} : {})};
       if (this.effect) await this.effect.update(data);
       else {
@@ -707,6 +727,9 @@ export class EffectItemSheet extends foundry.applications.api.HandlebarsApplicat
       effect = this.document.effects.get(id);
     }
     if (editor === "aegis") return openAegis(this.document, effect);
+    if (effect && effects.length === 1 && effect.isOwner && effect.name !== this.document.name) {
+      await effect.update({name: this.document.name});
+    }
     return effect?.sheet.render({force: true});
   }
   async render(options, ...args) {
@@ -732,7 +755,7 @@ export function injectEditorButtons(app, html) {
     if (doc.documentName === "Item" && doc.type !== EFFECT_TYPE) {
       // Skills use an untabbed template in SWADE. Give them the same controls
       // by rendering the native item Effects partial in their content column.
-      if (doc.type === "skill" && !html.querySelector('section[data-tab="effects"]')) {
+      if (doc.type === "skill" && !html.classList.contains("sbs-skill-draft") && !html.querySelector('section[data-tab="effects"]')) {
         const sheetContent = html.querySelector(".main-grid > .sheet-content");
         if (sheetContent) {
           const details = document.createElement("details"); details.className = "sbe-skill-effects";

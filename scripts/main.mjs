@@ -23,6 +23,7 @@ import {installEffectText} from "./effect-text.mjs";
 import {registerApplications} from "./applications.mjs";
 import {installEffectImports} from "./effect-import.mjs";
 import {installRestrictions} from "./restrictions.mjs";
+import {initializeTemplateCopy} from "./effect-template.mjs";
 
 class EffectTemplateData extends foundry.abstract.TypeDataModel {
   static defineSchema() { return {description: new foundry.data.fields.HTMLField()}; }
@@ -59,6 +60,7 @@ Hooks.once("init", () => {
     if (item.type !== EFFECT_TYPE) return;
     const img = item.img === CONFIG.Item.documentClass.DEFAULT_ICON ? ICON : item.img;
     if (item.effects.size) {
+      initializeTemplateCopy(item);
       if (img !== item.img) item.updateSource({img});
       return;
     }

@@ -6,7 +6,7 @@ import {damageRoll, isDamageMessage, messageContext, messageSources, setRollCont
 import {opposedResult} from "./opposed-context.mjs";
 import {normalizeFlags} from "./rules.mjs";
 import {usesTargetRows, shakeOffAction} from "../../swade-better-setting/scripts/chat-target-data.mjs";
-import {damageSource, damageResolution, inlineAttackOutcome, inlineDamageActions, inlineDamageMessage, inlineDamageOptions, registerInlineDamage, rollInlineDamage} from "./inline-damage.mjs";
+import {damageSource, damageResolution, inlineAttackOutcome, inlineDamageActions, inlineDamageMessage, inlineDamageOptions, registerInlineDamage, rollInlineDamage, unlockDamageResolution} from "./inline-damage.mjs";
 import {resolveMessageDamage, refreshInlineDamageResolvers} from "./damage.mjs";
 
 const choosers = new Map();
@@ -279,7 +279,9 @@ function targetRows(message, context) {
       const roll = button("target-damage", "fa-solid fa-burst", label,
         () => saved ? resolveMessageDamage(saved, {tokens: [token]}) : rollInlineDamage(message, token.uuid),
         !!resolution?.final || (saved ? !game.user.isGM && !ownedSource && !token.actor.isOwner : !ownedSource),
-        {run: event => saved ? damageRerollMenu(event, message, token) : rollInlineDamage(message, token.uuid, {allTargets: true}), disabled: !!resolution || !ownedSource});
+        {run: event => resolution ? unlockDamageResolution(message, token)
+          : saved ? damageRerollMenu(event, message, token) : rollInlineDamage(message, token.uuid, {allTargets: true}),
+          disabled: resolution ? !game.user.isGM && !token.actor.isOwner : !ownedSource});
       const box = document.createElement("span"); box.className = "sbe-target-roll-box sbe-target-damage-box";
       if (resolution) box.dataset.resolution = resolution.state;
       roll.before(box); box.append(roll);
@@ -290,7 +292,7 @@ function targetRows(message, context) {
         roll.append(result);
         const tip = document.createElement("div");
         const formula = document.createElement("strong"); formula.textContent = damageRoll(saved).formula; tip.append(formula);
-        const detail = document.createElement("div"); detail.textContent = sbsI18n(`${MODULE_ID}.InlineDamage.Resolve`); tip.append(detail);
+        const detail = document.createElement("div"); detail.textContent = sbsI18n(`${MODULE_ID}.InlineDamage.${resolution ? "Unlock" : "Resolve"}`); tip.append(detail);
         roll.dataset.tooltipHtml = tip.outerHTML; roll.dataset.tooltipClass = "sbe-resistance-tooltip";
         delete roll.dataset.tooltipText;
       } else {
@@ -310,8 +312,30 @@ function targetRows(message, context) {
   return section;
 }
 
+function renderAttackOutcome(message, content, context) {
+  content.querySelector(".sbs-attack-outcomes")?.remove();
+  if (isDamageMessage(message) || context.opposition || context.response || damageSource(message)?.type !== "weapon") return;
+  const total = opposedTN(message);
+  if (!Number.isFinite(total)) return;
+  const group = document.createElement("div"); group.className = "sbs-attack-outcomes";
+  const targets = messageTargets(message, context).filter(token => token.actor && (!token.hidden || game.user.isGM || token.isOwner));
+  const results = targets.length ? targets.map(token => ({name: token.name, ...inlineAttackOutcome(message, token)}))
+    : [{hit: !damageRoll(message)?.isCritfail && total >= (damageRoll(message)?.targetNumber ?? 4),
+      raise: !damageRoll(message)?.isCritfail && total >= (damageRoll(message)?.targetNumber ?? 4) + 4}];
+  for (const result of results) {
+    const state = !result.hit ? "failure" : result.raise ? "raise" : "success";
+    const row = document.createElement("p"); row.className = "sbs-attack-outcome"; row.dataset.outcome = state;
+    const icon = document.createElement("i"); icon.className = "fa-solid " + (state === "failure" ? "fa-xmark" : state === "raise" ? "fa-check-double" : "fa-check");
+    row.append((targets.length > 1 ? result.name + " · " : "") + sbsI18n(`${MODULE_ID}.AttackOutcome.${state}`), icon); group.append(row);
+  }
+  const roll = content.querySelector(".swade-roll-message") ?? content;
+  const modifiers = roll.querySelector("details.modifiers");
+  if (modifiers) modifiers.before(group); else roll.append(group);
+}
+
 export function renderOpposedRoll(message, html, context) {
   const content = html.querySelector(".message-content") ?? html;
+  renderAttackOutcome(message, content, context);
   if (!html.dataset.sbeSharedDamageBound) {
     html.dataset.sbeSharedDamageBound = "true";
     html.addEventListener("contextmenu", event => {
@@ -351,6 +375,8 @@ export function installOpposedRolls() {
   wrapMethod(CONFIG.Dice.SwadeRoll.prototype, "toMessage", async function (original, messageData = {}, options = {}) {
     const source = {...messageData, significantRoll: this, getFlag: (scope, key) => messageData.flags?.[scope]?.[key]};
     const context = messageContext(source);
+    // Keep the native damage dialog while storing its result in the parent card.
+    if (context.inlineDamage && isDamageMessage(source)) return null;
     const opposition = context.opposition ?? context.response;
     if (opposition) {
       opposition.modifiers = (this.modifiers ?? []).filter(mod => !mod.ignore).map(mod => ({label: game.i18n.localize(mod.label), value: String(mod.value)}));

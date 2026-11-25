@@ -11,6 +11,8 @@ export const STANDARD_FLAGS = ["wounds", "fatigue", "distracted", "encumbered", 
   ...["light", "medium", "heavy", "near-total"].flatMap(level => [`${level}-cover`, `${level}-cover-penalty`]),
   "shake-off", "opposed-roll", "card-face", "card-number", "card-joker", ...[...CARD_RANKS, ...Object.values(JOKER_RANKS)].map(rank => `card-${rank}`)];
 const physical = new Set(["weapon", "armor", "shield", "gear", "consumable"]);
+const resolvingActorFlags = new WeakSet();
+const resolvingDocumentFlags = new WeakSet();
 export const isGear = doc => doc?.documentName === "Item" && physical.has(doc.type);
 export const customFlags = doc => normalizeFlags(doc?.getFlag?.("swade-better-effects", "tags") ?? doc?.flags?.["swade-better-effects"]?.tags ?? []);
 export const excludedFlags = doc => normalizeFlags(doc?.getFlag?.("swade-better-effects", "excludedTags") ?? doc?.flags?.["swade-better-effects"]?.excludedTags ?? []);
@@ -115,7 +117,16 @@ export function effectiveFlags(doc, token) {
   if (!doc) return [];
   const excluded = new Set(excludedFlags(doc));
   const flags = suppliedFlags(doc, token);
-  globalThis.Hooks?.callAll("swadeBetterEffectsDocumentFlags", doc, token, flags);
+  const isActor = doc.documentName === "Actor";
+  const resolving = isActor ? resolvingActorFlags : resolvingDocumentFlags;
+  // A hook can access a lazy token actor while it is being constructed. Foundry
+  // may construct another Actor for the same Token before publishing the first.
+  const key = isActor ? doc.token ?? doc : doc;
+  if (!resolving.has(key)) {
+    resolving.add(key);
+    try { globalThis.Hooks?.callAll("swadeBetterEffectsDocumentFlags", doc, token, flags); }
+    finally { resolving.delete(key); }
+  }
   return normalizeFlags(flags).filter(flag => !excluded.has(flag));
 }
 
